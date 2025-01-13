@@ -1,0 +1,350 @@
+**/*.memsafe
+TEMP
+doxygen/*
+output/*
+**/*.pt
+contrib/*
+**/.obsidian
+**/CMakeFiles
+**/CMakeCache.txt
+**/*.cmake
+**/newlang-unit-tests
+**/newlang-unit-tests.exe
+**/nlc.exe
+**/**tar.xz
+**/DartConfiguration.tcl
+TAG
+
+**/*.bc
+**/*.data
+**/*.s
+
+**/*.i
+**/*.vcxproj.filters
+**/*.vcxproj.user
+
+**/syntax_help*.cpp
+**/newlang_doc.txt
+**/version.*
+docs/syntax.txt
+output
+**/*temp*
+**/tmp
+**/.vs
+.history
+
+
+# Binaries
+*.7z
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
+*.war
+*.ear
+*.sar
+*.class
+
+# NetBeans specific
+**/nbproject/private/
+**/build/
+**/nbbuild/
+**/dist/
+**/nbdist/
+**/nbactions.xml
+**/nb-configuration.xml
+**/Debug*
+**/Release*
+
+# Misc
+*.swp
+release.properties
+pom.xml.releaseBackup
+pom.xml.tag
+
+
+
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# autotools
+**/.deps
+*.log
+*.status
+
+
+# Executables
+*.exe
+*.out
+*.app
+
+
+# Autogenerate
+doxydoc
+**/version.c
+**/version.h
+**/version.pri
+**/moc_*.h
+**/moc_*.cpp
+**/ui_*.h
+**/ui_*.cpp
+**/qrc_resource.cpp
+**/parsetab.py
+**/parser.py
+
+# temp files
+*.o
+*.d
+*.axf
+*.crf
+**/*temp.*
+**/*.out
+**/.*_history
+**/*.save
+**/*.img-graph
+**/*.pb
+
+
+*.htm
+*.hex
+*.lnp
+*.lst
+*.map
+*.sct
+*.dep
+*.TMP
+*.tmp
+*.bak
+*._*
+*.iex
+
+*.log
+.metadata
+
+
+_output/
+
+# C++ objects and libs
+
+*.slo
+*.lo
+*.o
+*.a
+*.la
+*.lai
+*.so
+*.lib
+*.dll
+*.dylib
+
+
+
+# Qt-es
+
+**/.qmake.cache
+**/.qmake.stash
+*.pro.user
+*.pro.user.*
+*.moc
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+ui_*.h
+*-build-*
+
+# QtCreator
+*.autosave
+
+#QtCtreator Qml
+*.qmlproject.user
+*.qmlproject.user.*
+
+
+
+# Windows image file caches
+Thumbs.db
+ehthumbs.db
+
+# Folder config file
+Desktop.ini
+
+# Recycle Bin used on file shares
+$RECYCLE.BIN/
+
+# Windows Installer files
+*.cab
+*.msi
+*.msm
+*.msp
+
+# Windows shortcuts
+*.lnk
+
+# =========================
+# Operating System Files
+# =========================
+
+# OSX
+# =========================
+
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Thumbnails
+._*
+
+# Files that might appear in the root of a volume
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+
+# Directories potentially created on remote AFP share
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+.idea
+
+# Distribution / packaging
+.Python
+build/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+#   For a library or package, you might want to ignore these files since the code is
+#   intended to run in multiple environments; otherwise, check them in:
+# .python-version
+
+# pipenv
+#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
+#   However, in case of collaboration, if having platform-specific dependencies or dependencies
+#   having no cross-platform support, pipenv may install dependencies that don't work, or not
+#   install all needed dependencies.
+#Pipfile.lock
+
+# PEP 582; used by e.g. github.com/David-OConnor/pyflow
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
