@@ -54,22 +54,17 @@ CCADMIN=CCadmin
 build: .build-post
 	
 
-.build-pre: memsafe_clang.so 
+.build-pre: 
 # Add your pre 'build' code here...
 
 .build-post: .build-impl
 # Add your post 'build' code here...
-
-memsafe_clang.so: memsafe_clang.cpp
-	clang++-19 -fPIC -shared -o memsafe_clang.so memsafe_clang.cpp `llvm-config-19 --cxxflags --ldflags --system-libs --libs all`
-
 
 # clean
 clean: .clean-post
 
 .clean-pre:
 # Add your pre 'clean' code here...
-	rm memsafe_clang.so || true
 
 .clean-post: .clean-impl
 # Add your post 'clean' code here...

@@ -35,15 +35,9 @@ OBJECTDIR=${CND_BUILDDIR}/${CND_CONF}/${CND_PLATFORM}
 
 # Object Files
 OBJECTFILES= \
-	${OBJECTDIR}/SameTypePlugin.o \
+	${OBJECTDIR}/_example.o \
 	${OBJECTDIR}/memsafe_clang.o \
-	${OBJECTDIR}/memsafe_plugin.o \
-	${OBJECTDIR}/test/_clang_matcher.o \
-	${OBJECTDIR}/test/_example.o \
-	${OBJECTDIR}/test/clang_matcher_test.o \
-	${OBJECTDIR}/test/matcher_test.o \
-	${OBJECTDIR}/test/memsafe_test.o \
-	${OBJECTDIR}/test/unittest.o
+	${OBJECTDIR}/memsafe_test.o
 
 
 # C Compiler Flags
@@ -70,50 +64,20 @@ ${CND_DISTDIR}/${CND_CONF}/${CND_PLATFORM}/memsafe: ${OBJECTFILES}
 	${MKDIR} -p ${CND_DISTDIR}/${CND_CONF}/${CND_PLATFORM}
 	${LINK.cc} -o ${CND_DISTDIR}/${CND_CONF}/${CND_PLATFORM}/memsafe ${OBJECTFILES} ${LDLIBSOPTIONS}
 
-${OBJECTDIR}/SameTypePlugin.o: SameTypePlugin.cpp nbproject/Makefile-${CND_CONF}.mk
+${OBJECTDIR}/_example.o: _example.cpp nbproject/Makefile-${CND_CONF}.mk
 	${MKDIR} -p ${OBJECTDIR}
 	${RM} "$@.d"
-	$(COMPILE.cc) -g -MMD -MP -MF "$@.d" -o ${OBJECTDIR}/SameTypePlugin.o SameTypePlugin.cpp
+	$(COMPILE.cc) -g -MMD -MP -MF "$@.d" -o ${OBJECTDIR}/_example.o _example.cpp
 
 ${OBJECTDIR}/memsafe_clang.o: memsafe_clang.cpp nbproject/Makefile-${CND_CONF}.mk
 	${MKDIR} -p ${OBJECTDIR}
 	${RM} "$@.d"
 	$(COMPILE.cc) -g -MMD -MP -MF "$@.d" -o ${OBJECTDIR}/memsafe_clang.o memsafe_clang.cpp
 
-${OBJECTDIR}/memsafe_plugin.o: memsafe_plugin.cpp nbproject/Makefile-${CND_CONF}.mk
+${OBJECTDIR}/memsafe_test.o: memsafe_test.cpp nbproject/Makefile-${CND_CONF}.mk
 	${MKDIR} -p ${OBJECTDIR}
 	${RM} "$@.d"
-	$(COMPILE.cc) -g -MMD -MP -MF "$@.d" -o ${OBJECTDIR}/memsafe_plugin.o memsafe_plugin.cpp
-
-${OBJECTDIR}/test/_clang_matcher.o: test/_clang_matcher.cpp nbproject/Makefile-${CND_CONF}.mk
-	${MKDIR} -p ${OBJECTDIR}/test
-	${RM} "$@.d"
-	$(COMPILE.cc) -g -MMD -MP -MF "$@.d" -o ${OBJECTDIR}/test/_clang_matcher.o test/_clang_matcher.cpp
-
-${OBJECTDIR}/test/_example.o: test/_example.cpp nbproject/Makefile-${CND_CONF}.mk
-	${MKDIR} -p ${OBJECTDIR}/test
-	${RM} "$@.d"
-	$(COMPILE.cc) -g -MMD -MP -MF "$@.d" -o ${OBJECTDIR}/test/_example.o test/_example.cpp
-
-${OBJECTDIR}/test/clang_matcher_test.o: test/clang_matcher_test.cpp nbproject/Makefile-${CND_CONF}.mk
-	${MKDIR} -p ${OBJECTDIR}/test
-	${RM} "$@.d"
-	$(COMPILE.cc) -g -MMD -MP -MF "$@.d" -o ${OBJECTDIR}/test/clang_matcher_test.o test/clang_matcher_test.cpp
-
-${OBJECTDIR}/test/matcher_test.o: test/matcher_test.cpp nbproject/Makefile-${CND_CONF}.mk
-	${MKDIR} -p ${OBJECTDIR}/test
-	${RM} "$@.d"
-	$(COMPILE.cc) -g -MMD -MP -MF "$@.d" -o ${OBJECTDIR}/test/matcher_test.o test/matcher_test.cpp
-
-${OBJECTDIR}/test/memsafe_test.o: test/memsafe_test.cpp nbproject/Makefile-${CND_CONF}.mk
-	${MKDIR} -p ${OBJECTDIR}/test
-	${RM} "$@.d"
-	$(COMPILE.cc) -g -MMD -MP -MF "$@.d" -o ${OBJECTDIR}/test/memsafe_test.o test/memsafe_test.cpp
-
-${OBJECTDIR}/test/unittest.o: test/unittest.cpp nbproject/Makefile-${CND_CONF}.mk
-	${MKDIR} -p ${OBJECTDIR}/test
-	${RM} "$@.d"
-	$(COMPILE.cc) -g -MMD -MP -MF "$@.d" -o ${OBJECTDIR}/test/unittest.o test/unittest.cpp
+	$(COMPILE.cc) -g -MMD -MP -MF "$@.d" -o ${OBJECTDIR}/memsafe_test.o memsafe_test.cpp
 
 # Subprojects
 .build-subprojects:

@@ -35,9 +35,7 @@ OBJECTDIR=${CND_BUILDDIR}/${CND_CONF}/${CND_PLATFORM}
 
 # Object Files
 OBJECTFILES= \
-	${OBJECTDIR}/test/_example.o \
-	${OBJECTDIR}/test/memsafe_test.o \
-	${OBJECTDIR}/test/unittest.o
+	${OBJECTDIR}/memsafe_test.o
 
 
 # C Compiler Flags
@@ -54,7 +52,7 @@ FFLAGS=
 ASFLAGS=
 
 # Link Libraries and Options
-LDLIBSOPTIONS=-lpthread -lgtest
+LDLIBSOPTIONS=-lpthread -lgtest -lgtest_main
 
 # Build Targets
 .build-conf: ${BUILD_SUBPROJECTS}
@@ -64,20 +62,14 @@ ${CND_DISTDIR}/${CND_CONF}/${CND_PLATFORM}/memsafe: ${OBJECTFILES}
 	${MKDIR} -p ${CND_DISTDIR}/${CND_CONF}/${CND_PLATFORM}
 	${LINK.cc} -o ${CND_DISTDIR}/${CND_CONF}/${CND_PLATFORM}/memsafe ${OBJECTFILES} ${LDLIBSOPTIONS}
 
-${OBJECTDIR}/test/_example.o: test/_example.cpp memsafe_clang.so nbproject/Makefile-${CND_CONF}.mk
-	${MKDIR} -p ${OBJECTDIR}/test
-	${RM} "$@.d"
-	$(COMPILE.cc) -g -DBUILD_UNITTEST -I. -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -MMD -MP -MF "$@.d" -o ${OBJECTDIR}/test/_example.o test/_example.cpp
+memsafe_clang.so: memsafe_clang.cpp nbproject/Makefile-${CND_CONF}.mk
+	@echo "\033[1;46;34m"Building a plugin memsafe_clang.so"\033[0m"
+	clang-19 -fPIC -shared -o memsafe_clang.so memsafe_clang.cpp `llvm-config-19 --cxxflags --ldflags --system-libs --libs all`
 
-${OBJECTDIR}/test/memsafe_test.o: test/memsafe_test.cpp memsafe_clang.so nbproject/Makefile-${CND_CONF}.mk
-	${MKDIR} -p ${OBJECTDIR}/test
+${OBJECTDIR}/memsafe_test.o: memsafe_test.cpp memsafe_clang.so nbproject/Makefile-${CND_CONF}.mk
+	${MKDIR} -p ${OBJECTDIR}
 	${RM} "$@.d"
-	$(COMPILE.cc) -g -DBUILD_UNITTEST -I. -MMD -MP -MF "$@.d" -o ${OBJECTDIR}/test/memsafe_test.o test/memsafe_test.cpp
-
-${OBJECTDIR}/test/unittest.o: test/unittest.cpp nbproject/Makefile-${CND_CONF}.mk
-	${MKDIR} -p ${OBJECTDIR}/test
-	${RM} "$@.d"
-	$(COMPILE.cc) -g -DBUILD_UNITTEST -I. -MMD -MP -MF "$@.d" -o ${OBJECTDIR}/test/unittest.o test/unittest.cpp
+	$(COMPILE.cc) -g -DBUILD_UNITTEST -I. -MMD -MP -MF "$@.d" -o ${OBJECTDIR}/memsafe_test.o memsafe_test.cpp
 
 # Subprojects
 .build-subprojects:
@@ -85,6 +77,7 @@ ${OBJECTDIR}/test/unittest.o: test/unittest.cpp nbproject/Makefile-${CND_CONF}.m
 # Clean Targets
 .clean-conf: ${CLEAN_SUBPROJECTS}
 	${RM} -r ${CND_BUILDDIR}/${CND_CONF}
+	${RM} memsafe_clang.so
 
 # Subprojects
 .clean-subprojects:

@@ -4,19 +4,9 @@
     <logicalFolder name="SourceFiles"
                    displayName="Исходные файлы"
                    projectFiles="true">
-      <logicalFolder name="f1" displayName="plugin" projectFiles="true">
-        <itemPath>SameTypePlugin.cpp</itemPath>
-        <itemPath>memsafe_clang.cpp</itemPath>
-        <itemPath>memsafe_plugin.cpp</itemPath>
-      </logicalFolder>
-      <logicalFolder name="f2" displayName="test" projectFiles="true">
-        <itemPath>test/_clang_matcher.cpp</itemPath>
-        <itemPath>test/_example.cpp</itemPath>
-        <itemPath>test/clang_matcher_test.cpp</itemPath>
-        <itemPath>test/matcher_test.cpp</itemPath>
-        <itemPath>test/memsafe_test.cpp</itemPath>
-        <itemPath>test/unittest.cpp</itemPath>
-      </logicalFolder>
+      <itemPath>_example.cpp</itemPath>
+      <itemPath>memsafe_clang.cpp</itemPath>
+      <itemPath>memsafe_test.cpp</itemPath>
     </logicalFolder>
     <logicalFolder name="HeaderFiles"
                    displayName="Файлы заголовков"
@@ -26,6 +16,7 @@
     <logicalFolder name="ResourceFiles"
                    displayName="Файлы ресурсов"
                    projectFiles="true">
+      <itemPath>_example.cpp.memsafe</itemPath>
     </logicalFolder>
     <logicalFolder name="TestFiles"
                    displayName="Файлы тестов"
@@ -69,51 +60,31 @@
           <linkerLibItems>
             <linkerLibStdlibItem>PosixThreads</linkerLibStdlibItem>
             <linkerLibLibItem>gtest</linkerLibLibItem>
+            <linkerLibLibItem>gtest_main</linkerLibLibItem>
           </linkerLibItems>
         </linkerTool>
       </compileType>
+      <item path="_example.cpp" ex="true" tool="1" flavor2="0">
+        <ccTool>
+          <commandLine>-Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -ferror-limit=50</commandLine>
+          <additionalDep>memsafe_clang.so</additionalDep>
+        </ccTool>
+      </item>
+      <item path="_example.cpp.memsafe" ex="false" tool="3" flavor2="0">
+      </item>
       <item path="memsafe.h" ex="false" tool="3" flavor2="0">
       </item>
-      <item path="memsafe_clang.cpp" ex="true" tool="1" flavor2="0">
-        <ccTool>
-          <additionalDep>matcher_test.cpp</additionalDep>
-        </ccTool>
+      <item path="memsafe_clang.cpp" ex="false" tool="3" flavor2="0">
+        <customTool>
+          <customToolCommandline>clang-19 -fPIC -shared -o memsafe_clang.so memsafe_clang.cpp `llvm-config-19 --cxxflags --ldflags --system-libs --libs all`</customToolCommandline>
+          <customToolDescription>"\033[1;46;34m"Building a plugin memsafe_clang.so"\033[0m"</customToolDescription>
+          <customToolOutputs>memsafe_clang.so</customToolOutputs>
+        </customTool>
       </item>
-      <item path="memsafe_plugin.cpp" ex="true" tool="1" flavor2="9">
-        <ccTool>
-          <commandLine>-Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe</commandLine>
-          <additionalDep>memsafe_clang.so</additionalDep>
-        </ccTool>
-      </item>
-      <item path="test/_clang_matcher.cpp" ex="true" tool="1" flavor2="0">
-        <ccTool>
-          <commandLine>-Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe</commandLine>
-          <additionalDep>memsafe_clang.so</additionalDep>
-        </ccTool>
-      </item>
-      <item path="test/_example.cpp" ex="false" tool="1" flavor2="0">
-        <ccTool>
-          <commandLine>-Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe</commandLine>
-          <additionalDep>memsafe_clang.so</additionalDep>
-        </ccTool>
-      </item>
-      <item path="test/clang_matcher_test.cpp" ex="true" tool="1" flavor2="9">
+      <item path="memsafe_test.cpp" ex="false" tool="1" flavor2="9">
         <ccTool>
           <additionalDep>memsafe_clang.so</additionalDep>
         </ccTool>
-      </item>
-      <item path="test/matcher_test.cpp" ex="true" tool="1" flavor2="0">
-        <ccTool>
-          <commandLine>-Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe</commandLine>
-          <additionalDep>memsafe_clang.so</additionalDep>
-        </ccTool>
-      </item>
-      <item path="test/memsafe_test.cpp" ex="false" tool="1" flavor2="9">
-        <ccTool>
-          <additionalDep>memsafe_clang.so</additionalDep>
-        </ccTool>
-      </item>
-      <item path="test/unittest.cpp" ex="false" tool="1" flavor2="9">
       </item>
     </conf>
     <conf name="Debug" type="1">
@@ -124,25 +95,15 @@
       </toolsSet>
       <compileType>
       </compileType>
-      <item path="SameTypePlugin.cpp" ex="false" tool="1" flavor2="0">
+      <item path="_example.cpp" ex="false" tool="1" flavor2="0">
+      </item>
+      <item path="_example.cpp.memsafe" ex="false" tool="3" flavor2="0">
       </item>
       <item path="memsafe.h" ex="false" tool="3" flavor2="0">
       </item>
       <item path="memsafe_clang.cpp" ex="false" tool="1" flavor2="0">
       </item>
-      <item path="memsafe_plugin.cpp" ex="false" tool="1" flavor2="0">
-      </item>
-      <item path="test/_clang_matcher.cpp" ex="false" tool="1" flavor2="0">
-      </item>
-      <item path="test/_example.cpp" ex="false" tool="1" flavor2="0">
-      </item>
-      <item path="test/clang_matcher_test.cpp" ex="false" tool="1" flavor2="0">
-      </item>
-      <item path="test/matcher_test.cpp" ex="false" tool="1" flavor2="0">
-      </item>
-      <item path="test/memsafe_test.cpp" ex="false" tool="1" flavor2="0">
-      </item>
-      <item path="test/unittest.cpp" ex="false" tool="1" flavor2="0">
+      <item path="memsafe_test.cpp" ex="false" tool="1" flavor2="0">
       </item>
     </conf>
     <conf name="Release" type="1">
@@ -165,25 +126,15 @@
           <developmentMode>5</developmentMode>
         </asmTool>
       </compileType>
-      <item path="SameTypePlugin.cpp" ex="false" tool="1" flavor2="0">
+      <item path="_example.cpp" ex="false" tool="1" flavor2="0">
+      </item>
+      <item path="_example.cpp.memsafe" ex="false" tool="3" flavor2="0">
       </item>
       <item path="memsafe.h" ex="false" tool="3" flavor2="0">
       </item>
       <item path="memsafe_clang.cpp" ex="false" tool="1" flavor2="0">
       </item>
-      <item path="memsafe_plugin.cpp" ex="false" tool="1" flavor2="0">
-      </item>
-      <item path="test/_clang_matcher.cpp" ex="false" tool="1" flavor2="0">
-      </item>
-      <item path="test/_example.cpp" ex="false" tool="1" flavor2="0">
-      </item>
-      <item path="test/clang_matcher_test.cpp" ex="false" tool="1" flavor2="0">
-      </item>
-      <item path="test/matcher_test.cpp" ex="false" tool="1" flavor2="0">
-      </item>
-      <item path="test/memsafe_test.cpp" ex="false" tool="1" flavor2="0">
-      </item>
-      <item path="test/unittest.cpp" ex="false" tool="1" flavor2="0">
+      <item path="memsafe_test.cpp" ex="false" tool="1" flavor2="0">
       </item>
     </conf>
   </confs>

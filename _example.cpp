@@ -1,10 +1,13 @@
 #include "memsafe.h"
 
+
+using namespace memsafe;
+
 namespace ns {
 
     namespace [[memsafe("unsafe")]] {
 
-        memsafe::VarShared<int> var_unsafe1(1);
+        VarShared<int> var_unsafe1(1);
         memsafe::VarShared<int> var_unsafe2(2);
         memsafe::VarShared<int> var_unsafe3(3);
 
@@ -18,7 +21,7 @@ namespace ns {
 
     static memsafe::VarValue<int> var_static(1);
 
-    int stub_function(memsafe::VarValue<int> arg) {
+    memsafe::VarShared<int> stub_function(memsafe::VarShared<int> arg, memsafe::VarValue<int> arg_val) {
 
         var_static = var_value;
         {
@@ -57,15 +60,32 @@ namespace ns {
                 var_shared4 = var_shared3; // OK
 
                 var_shared4 = var_shared4; // error ??????????
+                // return var_shared4; // Error
             }
+            // return arg; // Error
+            std::swap(var_shared1, var_shared3);
         }
 
         int temp = 3;
         temp = 4;
         var_value = 5;
         *var_value += 6;
-        return temp + *var_value;
+
+
+        return VarShared<int>(777);
     }
-    
+
+    memsafe::VarShared<int> stub_function8() {
+        return VarShared<int>(888);
+    }
+
+    memsafe::VarShared<int> stub_function9() {
+        return VarShared<int>(999);
+    }
+    //    decltype(auto) stub_auto() {
+    //        auto result = var_static.take();
+    //        return result;
+    //    }
+
 }
 
