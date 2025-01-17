@@ -20,7 +20,7 @@
 
 
 #ifdef BUILD_UNITTEST
-// Removing all restrictions on access to protected and private fields for testing cases
+    // Removing all restrictions on access to protected and private fields for testing cases
 #define SCOPE(scope)  public
 #else
 #define SCOPE(scope)  scope
@@ -44,7 +44,7 @@
 namespace MEMSAFE_ATTR("define") memsafe { // Begin define memory safety classes
 
     typedef int INT;
-
+    
     class runtime_format : public std::runtime_error {
     public:
         template <class... Args>
@@ -323,7 +323,7 @@ namespace MEMSAFE_ATTR("define") memsafe { // Begin define memory safety classes
      */
 
     template <typename V, template <typename> typename S = VarSyncNone >
-    class MEMSAFE_ATTR("share") VarGuard : public VarInterface<V>, public std::atomic<std::shared_ptr<S<V>>>, public std::enable_shared_from_this<VarGuard<V, S>>
+    class MEMSAFE_ATTR("share") VarGuard : public VarInterface<V>, public std::shared_ptr<S<V>>, public std::enable_shared_from_this<VarGuard<V, S>>
     {
         public:
 
@@ -338,14 +338,14 @@ namespace MEMSAFE_ATTR("define") memsafe { // Begin define memory safety classes
          */
 
         //        typedef S<V> GuardType;
-        typedef std::atomic<std::shared_ptr<S<V>>> SharedType;
-        typedef std::atomic<std::weak_ptr<S<V>>> WeakType;
+        typedef std::shared_ptr<S < V>> SharedType;
+        typedef std::weak_ptr<S < V>> WeakType;
         //        std::shared_ptr<V> data; // @todo replace to std::atomic<std::shared_ptr<V>>
         //        SharedType guard;
 
         public:
 
-        VarGuard(V val) : std::atomic<std::shared_ptr<S < V >>> (std::make_shared<S < V >> (val)) { // { //std::make_shared<G>(val)
+        VarGuard(V val) : std::shared_ptr<S < V >> (std::make_shared<S < V >> (val)) { // { //std::make_shared<G>(val)
         }
 
         virtual V& operator*() override {
@@ -354,9 +354,9 @@ namespace MEMSAFE_ATTR("define") memsafe { // Begin define memory safety classes
             //            V result = guard->data;
             //            guard->sync.unlock();
             //            return result;
-            this->load().get()->lock();
-            this->load().get()->unlock();
-            return this->load(). template shared_ptr<S < V>>::operator*().data;
+            this->get()->lock();
+            this->get()->unlock();
+            return this->template shared_ptr<S < V>>::operator*().data;
         }
 
         virtual const V& operator*() const override {
@@ -366,9 +366,9 @@ namespace MEMSAFE_ATTR("define") memsafe { // Begin define memory safety classes
             //            guard->sync.unlock();
             //            return result;
             //            return this->template shared_ptr<V>::operator*();
-            this->load().get()->lock();
-            this->load().get()->unlock();
-            return this->load().template shared_ptr<S < V>>::operator*().data;
+            this->get()->lock();
+            this->get()->unlock();
+            return this->template shared_ptr<S < V>>::operator*().data;
             //            return guard->data;
         }
 
@@ -430,12 +430,11 @@ namespace MEMSAFE_ATTR("define") memsafe { // Begin define memory safety classes
         // Для VarShared на данные
         // Для VarGuard на сам VarGuard ?????
 
-
-        explicit VarWeak(std::atomic<T> & ptr) : T::WeakType(ptr.load()) {
-        }
-
         VarWeak(T & ptr) : T::WeakType(ptr) {
         }
+
+        //        explicit VarWeak(const VarShared<V> & ptr) : T::WeakType(ptr) {
+        //        }
         //
         //        template <typename D, template <typename> typename S >
         //        VarWeak(const VarGuard<D, S> & ptr) : weak(ptr.guard) {

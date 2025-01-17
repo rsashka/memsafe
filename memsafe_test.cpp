@@ -98,7 +98,7 @@ TEST(MemSafe, Sizes) {
     EXPECT_EQ(99, sizeof (std::array<uint8_t, 99 >));
     EXPECT_EQ(100, sizeof (std::array<uint8_t, 100 >));
     EXPECT_EQ(101, sizeof (std::array<uint8_t, 101 >));
-
+    
     EXPECT_EQ(112, sizeof (VarSync<std::array<uint8_t, 100 >>));
     EXPECT_EQ(120, sizeof (VarSyncNone<std::array<uint8_t, 100 >>));
     EXPECT_EQ(152, sizeof (VarSyncMutex<std::array <uint8_t, 100 >>));
@@ -110,6 +110,8 @@ TEST(MemSafe, Sizes) {
     EXPECT_EQ(152, sizeof (VarSyncMutex<std::array <uint8_t, 101 >>));
     EXPECT_EQ(176, sizeof (VarSyncRecursiveShared<std::array<uint8_t, 101 >>));
 }
+
+
 
 TEST(MemSafe, Cast) {
 
@@ -139,54 +141,53 @@ TEST(MemSafe, Cast) {
     //    std::cout << "guard_int: " << guard_int.shared_this.use_count() << "\n";
     //    int & take_guard = *guard_int;
 
-    {
-        VarWeak<int> weak_shared1(shared_int);
-        VarWeak<int> weak_shared2 = weak_shared1;
-        auto weak_shared3 = shared_int.weak();
 
-        VarWeak<int, VarShared<int>> weak_shared4 = shared_int.weak();
+    VarWeak<int> weak_shared1(shared_int);
+    VarWeak<int> weak_shared2 = weak_shared1;
+    auto weak_shared3 = shared_int.weak();
 
-
-        EXPECT_EQ(1, guard_int.load().use_count()) << guard_int.load().use_count();
-        EXPECT_EQ(1, guard_int.load().use_count()) << guard_int.load().use_count();
-        //    ASSERT_NO_THROW(guard_int.weak().load());
-        //    VarWeak<int, VarGuard<int>> weak_guard1 = guard_int.weak();
-        //
-        //    //    std::cout << "weak_guard1: " << guard_int.shared_this.use_count() << "\n";
-        //
-        auto weak_guard2(guard_int.load());
-        //
-        //    //    std::cout << "weak_guard2: " << guard_int.shared_this.use_count() << "\n";
-        //
-        auto weak_guard3 = guard_int.load();
-
-        //    std::cout << "weak_guard3: " << guard_int.shared_this.use_count() << "\n";
+    VarWeak<int, VarShared<int>> weak_shared4 = shared_int.weak();
 
 
+    ASSERT_EQ(1, guard_int.use_count()) << guard_int.use_count();
+    ASSERT_EQ(1, guard_int.use_count()) << guard_int.use_count();
+    ASSERT_NO_THROW(guard_int.weak());
+    VarWeak<int, VarGuard<int>> weak_guard1 = guard_int.weak();
+    //
+    //    //    std::cout << "weak_guard1: " << guard_int.shared_this.use_count() << "\n";
+    //
+    auto weak_guard2(guard_int.weak());
+    //
+    //    //    std::cout << "weak_guard2: " << guard_int.shared_this.use_count() << "\n";
+    //
+    auto weak_guard3 = guard_int.weak();
 
-        //    auto auto_shared9(weak_shared1.take());
-        //    auto auto_guard9(weak_guard1.take());
+    //    std::cout << "weak_guard3: " << guard_int.shared_this.use_count() << "\n";
 
 
-        //template <typename V, typename T = V, typename W = std::weak_ptr<T>> class VarWeak;
-        ASSERT_NO_THROW(weak_shared1.take());
 
-        VarAuto<int, VarShared<int>> auto_shared(weak_shared1.take());
+    //    auto auto_shared9(weak_shared1.take());
+    //    auto auto_guard9(weak_guard1.take());
 
-        EXPECT_EQ(1, guard_int.load().use_count());
 
-        //    auto auto_guard1(weak_guard1.take());
+    //template <typename V, typename T = V, typename W = std::weak_ptr<T>> class VarWeak;
+    ASSERT_NO_THROW(weak_shared1.take());
 
-        EXPECT_NO_THROW(*guard_int);
+    VarAuto<int, VarShared<int>> auto_shared(weak_shared1.take());
 
-        //    VarAuto<int, VarGuard<int, VarGuardData<int>>> auto_guard2(weak_guard1.take());
-        //    std::cout << "auto_guard: " << guard_int.shared_this.use_count() << "\n";
+    ASSERT_EQ(1, guard_int.use_count());
 
-        //    int & take_weak_shared = *auto_shared;
-        //    int & take_weak_guard = *auto_guard;
-    }
+    //    auto auto_guard1(weak_guard1.take());
 
-    EXPECT_EQ(1, guard_int.load().use_count());
+    ASSERT_NO_THROW(*guard_int);
+
+    //    VarAuto<int, VarGuard<int, VarGuardData<int>>> auto_guard2(weak_guard1.take());
+    //    std::cout << "auto_guard: " << guard_int.shared_this.use_count() << "\n";
+
+    //    int & take_weak_shared = *auto_shared;
+    //    int & take_weak_guard = *auto_guard;
+
+
 
 }
 
@@ -309,13 +310,13 @@ TEST(MemSafe, ApplyAttr) {
     }
 
     memsafe::VarGuard<int> var_none(1);
-    ASSERT_TRUE(var_none.load());
+    ASSERT_TRUE(var_none);
 
     memsafe::VarGuard<int, VarSyncMutex> var_mutex(1);
-    ASSERT_TRUE(var_mutex.load());
+    ASSERT_TRUE(var_mutex);
 
     memsafe::VarGuard<int, VarSyncRecursiveShared> var_recursive(1);
-    ASSERT_TRUE(var_recursive.load());
+    ASSERT_TRUE(var_recursive);
 
     //    var_guard1 = var_guard2;
     //    {
