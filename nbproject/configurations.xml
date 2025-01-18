@@ -64,9 +64,9 @@
           </linkerLibItems>
         </linkerTool>
       </compileType>
-      <item path="_example.cpp" ex="true" tool="1" flavor2="0">
+      <item path="_example.cpp" ex="false" tool="1" flavor2="0">
         <ccTool>
-          <commandLine>-Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -ferror-limit=50</commandLine>
+          <commandLine>-std=c++20 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe</commandLine>
           <additionalDep>memsafe_clang.so</additionalDep>
         </ccTool>
       </item>

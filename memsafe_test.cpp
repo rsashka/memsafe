@@ -2,6 +2,11 @@
 
 #include <gtest/gtest.h>
 
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <filesystem>
+
 #include "memsafe.h"
 
 using namespace memsafe;
@@ -98,7 +103,7 @@ TEST(MemSafe, Sizes) {
     EXPECT_EQ(99, sizeof (std::array<uint8_t, 99 >));
     EXPECT_EQ(100, sizeof (std::array<uint8_t, 100 >));
     EXPECT_EQ(101, sizeof (std::array<uint8_t, 101 >));
-    
+
     EXPECT_EQ(112, sizeof (VarSync<std::array<uint8_t, 100 >>));
     EXPECT_EQ(120, sizeof (VarSyncNone<std::array<uint8_t, 100 >>));
     EXPECT_EQ(152, sizeof (VarSyncMutex<std::array <uint8_t, 100 >>));
@@ -111,20 +116,14 @@ TEST(MemSafe, Sizes) {
     EXPECT_EQ(176, sizeof (VarSyncRecursiveShared<std::array<uint8_t, 101 >>));
 }
 
-
-
 TEST(MemSafe, Cast) {
 
-    EXPECT_EQ(8, sizeof (VarInterface<bool>));
-    EXPECT_EQ(8, sizeof (VarInterface<int32_t>));
-    EXPECT_EQ(8, sizeof (VarInterface<int64_t>));
-
     EXPECT_EQ(1, sizeof (bool));
-    EXPECT_EQ(16, sizeof (VarValue<bool>));
+    EXPECT_EQ(1, sizeof (VarValue<bool>));
     EXPECT_EQ(4, sizeof (int32_t));
-    EXPECT_EQ(16, sizeof (VarValue<int32_t>));
+    EXPECT_EQ(4, sizeof (VarValue<int32_t>));
     EXPECT_EQ(8, sizeof (int64_t));
-    EXPECT_EQ(16, sizeof (VarValue<int64_t>));
+    EXPECT_EQ(8, sizeof (VarValue<int64_t>));
 
     VarValue<int> value_int(0);
     int & take_value = *value_int;
@@ -132,12 +131,23 @@ TEST(MemSafe, Cast) {
 
     VarShared<int> shared_int(0);
     int & take_shared1 = *shared_int;
+
+    ASSERT_EQ(0, *shared_int);
+    *shared_int = 11;
+    ASSERT_EQ(11, *shared_int);
+
     auto var_take_shared = shared_int.take();
     int & take_shared2 = *var_take_shared;
 
 
     //    auto guard_int(0, "*");
-    VarGuard<int> guard_int(0);
+    VarGuard<int> guard_int(22);
+    int temp_guard = *guard_int;
+    guard_int.set(33);
+
+    ASSERT_EQ(22, temp_guard);
+    ASSERT_EQ(33, *guard_int);
+
     //    std::cout << "guard_int: " << guard_int.shared_this.use_count() << "\n";
     //    int & take_guard = *guard_int;
 
@@ -318,13 +328,162 @@ TEST(MemSafe, ApplyAttr) {
     memsafe::VarGuard<int, VarSyncRecursiveShared> var_recursive(1);
     ASSERT_TRUE(var_recursive);
 
-    //    var_guard1 = var_guard2;
-    //    {
-    //        var_guard1 = var_guard2;
-    //        {
-    //            var_guard1 = var_guard2;
-    //        }
-    //    }
 }
 
+TEST(MemSafe, Plugin) {
+
+    namespace fs = std::filesystem;
+
+    
+    // Example of running a plugin to compile a file
+    
+    /* The plugin operation is checked as follows.
+     * A specific file with examples of template usage from the metsafe/ file is compiled
+     * The example file contains correct C++ code, 
+     * but the variables in it are used both correctly and with violations of the rules.
+     * 
+     * When compiling a file with an analyzer plugin, debug output is created and written to a debug file.
+     * This file is read in the test and debug messages of the plugin 
+     * are searched for in it (both successful and unsuccessful checks).
+     * 
+     * If all check messages are found, the test is considered successful.
+     */        
+    
+    std::string cmd = "clang-19";
+    cmd += " -std=c++20 -ferror-limit=500 ";
+    cmd += " -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe ";
+    cmd += " -Xclang -plugin-arg-memsafe -Xclang fixit=memsafe ";
+    cmd += " _example.cpp ";
+
+    const char * file_out = "_example.cpp.memsafe";
+    fs::remove(file_out);
+    int err = std::system(cmd.c_str());
+
+    ASSERT_TRUE(fs::exists(file_out));
+
+    std::ifstream file(file_out);
+
+    ASSERT_TRUE(file.is_open());
+
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+
+    std::string output = buffer.str();
+    file.close();
+
+    ASSERT_TRUE(!output.empty());
+
+    std::set<std::string> diag({
+        //MEMSAFE_LINE(1000);        
+        "unsafe, 1001",
+        "unsafe, 1002",
+        "unsafe, 1003",
+        "shared, 1001, 1",
+        "shared, 1002, 1",
+        "shared, 1003, 1",
+
+        //MEMSAFE_LINE(2000);
+        "value, 2001, 1",
+        "value, 2002, 1",
+        "shared, 2003, 1",
+        "shared, 2004, 1",
+
+        //MEMSAFE_LINE(3000);
+        "value, 3001, 1",
+        "error, 3002",
+        "auto, 3002, 1",
+        "error, 3003",
+        "auto, 3003, 1",
+
+        //MEMSAFE_LINE(4000);
+        "shared, 4002, 1",
+        "value, 4002, 1",
+
+
+        //MEMSAFE_LINE(4100);
+        "value, 4005, 1",
+        "approved, 4005",
+        "value, 4005, 1",
+        "value, 4007, 1",
+        "approved, 4007",
+        "value, 4007, 1",
+        "value, 4009, 1",
+        "approved, 4009",
+        "value, 4009, 1",
+
+
+
+        //MEMSAFE_LINE(4200);
+        "shared, 4020, 2",
+        "shared, 4021, 2",
+
+        //MEMSAFE_LINE(4300) !!!!!!!!!!!!!!!
+        "shared, 4024, 2",
+        "error, 4024",
+        "shared, 4024, 2",
+
+        "shared, 4025, 2",
+        "error, 4025",
+        "shared, 4025, 2",
+
+
+        //MEMSAFE_LINE(4400) !!!!!!!!!!!!!!!
+        "shared, 4028, 3",
+
+        "shared, 4029, 2",
+        "error, 4029",
+        "shared, 4029, 2",
+
+        "shared, 4030, 2",
+        "error, 4030",
+        "shared, 4030, 2",
+        "shared, 4031, 3",
+        "error, 4031",
+        "shared, 4031, 2",
+
+
+        // MEMSAFE_LINE(4500) !!!!!!!!!!!!!!! 
+        "shared, 4035, 4",
+        "shared, 4037, 2",
+        "error, 4037",
+        "shared, 4037, 2",
+        "shared, 4038, 2",
+        "error, 4038",
+        "shared, 4038, 2",
+        "shared, 4039, 3",
+        "error, 4039",
+        "shared, 4039, 2",
+
+        "shared, 4041, 4",
+        "error, 4041",
+        "shared, 4041, 2",
+        "shared, 4042, 4",
+        "error, 4042",
+        "shared, 4042, 3",
+        "shared, 4044, 4",
+        "error, 4044",
+        "shared, 4044, 4",
+
+        // MEMSAFE_LINE(4600) !!!!!!!!!!!!!!!
+        "error, 4049",
+        "shared, 4049, 2",
+        "shared, 4049, 3",
+        // MEMSAFE_LINE(4700) !!!!!!!!!!!!!!!
+        "value, 4055, 1",
+        "approved, 4055",
+
+        //MEMSAFE_LINE(5000)
+        "error, 5004",
+                
+        //  MEMSAFE_LINE(6000)
+        "approved, 6004",
+
+    });
+
+
+    for (auto &str : diag) {
+        EXPECT_TRUE(output.find(str) != std::string::npos) << str;
+    }
+
+}
 #endif

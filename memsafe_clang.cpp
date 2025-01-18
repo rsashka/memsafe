@@ -136,12 +136,12 @@ namespace {
          * 
          */
 
-        //        bool diagAppertainsToStmt(Sema &S, const ParsedAttr &Attr, const Stmt *St) const override {
-        //            St->dumpColor();
-        //            std::cout << "diagAppertainsToStmt " << isa<ReturnStmt>(St) << "\n";
-        //            std::cout.flush();
-        //            return isa<ReturnStmt>(St);
-        //        }
+        bool diagAppertainsToStmt(Sema &S, const ParsedAttr &Attr, const Stmt *St) const override {
+//            St->dumpColor();
+//            std::cout << "diagAppertainsToStmt " << isa<ReturnStmt>(St) << "\n";
+//            std::cout.flush();
+            return true;//isa<ReturnStmt>(St);
+        }
         //
         //        AttrHandling handleStmtAttribute(Sema &S, Stmt *St, const ParsedAttr &Attr) const override {
         //
@@ -229,423 +229,17 @@ namespace {
             return Filename + RewriteSuffix;
         }
 
-    private:
+    public:
         // The suffix appended to rewritten files.
         std::string RewriteSuffix;
     };
 
-
-
-
     /*
      * 
      * 
      * 
      */
 
-
-    //    class MemSafeHandler : public MatchFinder::MatchCallback {
-    //    private:
-    //
-    //        CompilerInstance &Instance;
-    //        DiagnosticsEngine &Diag;
-    //        ASTContext *context;
-    //        //        std::vector<ObjCPropertyDecl *> propertyDeclVector;
-    //
-    //
-    //    public:
-    //
-    //        MemSafeHandler(CompilerInstance &Instance, DiagnosticsEngine &d) : Instance(Instance), Diag(d) {
-    //
-    //        }
-    //
-    //        void setContext(ASTContext &context) {
-    //
-    //            this->context = &context;
-    //        }
-    //
-    //        static bool checkAnnotate(const Decl * decl, std::string_view name) {
-    //            if (!decl) {
-    //                return false;
-    //            }
-    //            //            for (auto &attr : decl->getAttrs()) {
-    //            //                if (name.compare(attr->getSpelling()) == 0) {
-    //            //                    return true;
-    //            //                }
-    //            //            }
-    //
-    //            if (AnnotateAttr * attr = decl->getAttr<AnnotateAttr>()) {
-    //
-    //                return attr->getAnnotation() == name.begin();
-    //            }
-    //            return false;
-    //        }
-    //
-    //        bool checkUnsafe(ASTContext &ctx, const Decl & decl) {
-    //
-    //            clang::DynTypedNodeList parents = ctx.getParents(decl);
-    //
-    //            while (!parents.empty()) {
-    //                if (parents[0].get<TranslationUnitDecl>()) {
-    //                    break;
-    //                }
-    //
-    //                if (const NamespaceDecl * ns = parents[0].get<NamespaceDecl>()) {
-    //                    if (memsafe.unsafeSet.find(ns) != memsafe.unsafeSet.end()) {
-    //                        FIXIT_DIAG(decl.getBeginLoc(), "Add mark \"unsafe\" namesapace", "unsafe");
-    //
-    //                        return true;
-    //                    }
-    //                }
-    //
-    //                parents = ctx.getParents(parents[0]);
-    //            }
-    //            return false;
-    //        }
-    //
-    //        VarInfo::DeclType findParenName(ASTContext &ctx, clang::DynTypedNodeList parents, int & level) {
-    //
-    //            level++;
-    //
-    //            while (!parents.empty()) {
-    //
-    //                if (parents[0].get<TranslationUnitDecl>()) {
-    //                    break;
-    //                }
-    //
-    //                if (const FunctionDecl * func = parents[0].get<FunctionDecl>()) {
-    //                    return func;
-    //                }
-    //
-    //                if (parents[0].get<CompoundStmt>()) {
-    //                    // CompoundStmt - определение внутри блока кода
-    //
-    //                    level++;
-    //                    goto next_parent;
-    //                }
-    //
-    //next_parent:
-    //                ;
-    //
-    //                parents = ctx.getParents(parents[0]);
-    //            }
-    //            return std::monostate();
-    //        }
-    //
-    //        /*
-    //         * Add template class name with specified attribute
-    //         */
-    //
-    //        void appendDecl(const NamedDecl &decl, const std::string_view attr) {
-    //
-    //            std::string name_full = decl.getQualifiedNameAsString();
-    //            std::string name_short = decl.getNameAsString();
-    //
-    //            std::cout << "Register template class '" << name_full << "' and '" << name_short << "' with '" << attr << "' attribute!\n";
-    //            std::cout.flush();
-    //            name_full.append("<"); // For complete full template name 
-    //            memsafe.clsUse[name_full] = attr.begin();
-    //
-    //            name_short.append("<"); // For complete full template name 
-    //            memsafe.clsUse[name_short] = attr.begin();
-    //        }
-    //
-    //        /*
-    //         * 
-    //         * 
-    //         */
-    //
-    //        virtual void run(const MatchFinder::MatchResult &Result) {
-    //
-    //            if (runAnalysis(Diag, Result)) {
-    //
-    //                //            const auto ID =
-    //                //                    DiagnosticsEngine.getCustomDiagID(clang::DiagnosticsEngine::Warning,
-    //                //                    "This should probably be a minus");
-    //                //
-    //                //            DiagnosticsEngine.Report(StartLocation, ID).AddFixItHint(FixIt);
-    //
-    //            }
-    //        }
-    //
-    //        bool runAnalysis(DiagnosticsEngine &Diag, const MatchFinder::MatchResult &Result) {
-    //
-    //            //            if (const NamespaceDecl * ns = Result.Nodes.getNodeAs<NamespaceDecl>("ns")) {
-    //            //
-    //            //                // Check namespace annotation attribute
-    //            //                // This check should be done first as it is used to enable and disable the plugin.
-    //            //
-    //            //                if (AnnotateAttr * attr = ns->getAttr<AnnotateAttr>()) {
-    //            //                    if (attr->getAnnotation() == "memsafe") {
-    //            //
-    //            //                        StringLiteral *attr_arg = nullptr;
-    //            //                        if (attr->args_size() == 1) {
-    //            //                            attr_arg = dyn_cast_or_null<StringLiteral>(*attr-> args_begin()); //getArgAsExpr(0));
-    //            //                        }
-    //            //                        if (!attr_arg) {
-    //            //                            clang::DiagnosticBuilder DB = Diag.Report(ns->getLocation(), Diag.getCustomDiagID(
-    //            //                                    DiagnosticsEngine::Error,
-    //            //                                    "The namespace attribute must contain one string argument!"));
-    //            //                            return false;
-    //            //                        }
-    //            //
-    //            //
-    //            //                        if (MemSafe::defineArg.compare(attr_arg->getString()) == 0) {
-    //            //
-    //            //                            if (memsafe.isEnabled()) {
-    //            //                                clang::DiagnosticBuilder DB = Diag.Report(ns->getLocation(), Diag.getCustomDiagID(
-    //            //                                        DiagnosticsEngine::Error,
-    //            //                                        "You cannot define plugin classes while it is running!"));
-    //            //                                return false;
-    //            //                            }
-    //            //
-    //            //
-    //            //                            if (memsafe.isStartDefine()) {
-    //            //                                clang::DiagnosticBuilder DB = Diag.Report(ns->getLocation(), Diag.getCustomDiagID(
-    //            //                                        DiagnosticsEngine::Error,
-    //            //                                        "Memory safety plugin detection is already running!"));
-    //            //                                return false;
-    //            //                            }
-    //            //
-    //            //                            memsafe.startDefine();
-    //            //                            return true;
-    //            //
-    //            //                        } else if (MemSafe::enableArg.compare(attr_arg->getString()) == 0) {
-    //            //
-    //            //                            std::string message;
-    //            //                            if (memsafe.setEnabled(true, &message)) {
-    //            //                                clang::DiagnosticBuilder DB = Diag.Report(ns->getLocation(), Diag.getCustomDiagID(
-    //            //                                        DiagnosticsEngine::Remark,
-    //            //                                        "Memory safety plugin is enabled!"));
-    //            //                            } else {
-    //            //                                clang::DiagnosticBuilder DB = Diag.Report(ns->getLocation(), Diag.getCustomDiagID(
-    //            //                                        DiagnosticsEngine::Error,
-    //            //                                        "Error enabling memory safety plugin!%0"));
-    //            //                                DB.AddString(message);
-    //            //                                return false;
-    //            //                            }
-    //            //                            return true;
-    //            //
-    //            //                        } else if (MemSafe::unsafeArg.compare(attr_arg->getString()) == 0) {
-    //            //
-    //            //                            memsafe.AddUnsafe(ns);
-    //            //                            return true;
-    //            //
-    //            //                        } else if (MemSafe::disableArg.compare(attr_arg->getString()) == 0) {
-    //            //
-    //            //                            memsafe.setEnabled(false);
-    //            //                            clang::DiagnosticBuilder DB = Diag.Report(ns->getLocation(), Diag.getCustomDiagID(
-    //            //                                    DiagnosticsEngine::Remark,
-    //            //                                    "Memory safety plugin is disabled!"));
-    //            //                            return true;
-    //            //
-    //            //                        } else {
-    //            //
-    //            //                            clang::DiagnosticBuilder DB = Diag.Report(ns->getLocation(), Diag.getCustomDiagID(
-    //            //                                    DiagnosticsEngine::Error,
-    //            //                                    "Unknown attribute argument '%0'!"));
-    //            //                            DB.AddString(attr_arg->getString());
-    //            //                            return false;
-    //            //                        }
-    //            //
-    //            //                        //                        std::cout << attr_arg->getString().str() << "!!!!!!\n";
-    //            //                        //                        ns->dumpColor();
-    //            //                    }
-    //            //                }
-    //            //                return true;
-    //            //            }
-    //
-    //
-    //            if (!memsafe.isStartDefine()) {
-    //                // If the plugin does not start to be defined, we do not process or check anything else.
-    //                return true;
-    //            }
-    //
-    //
-    //            if (const CXXRecordDecl * base = Result.Nodes.getNodeAs<CXXRecordDecl>("cls")) {
-    //
-    //                if (AnnotateAttr * attr = base->getAttr<AnnotateAttr>()) {
-    //                    if (attr->getAnnotation() != "memsafe") {
-    //                        return true;
-    //                    }
-    //
-    //                    //  Mark only
-    //                    checkUnsafe(*Result.Context, *base);
-    //                    //                    if (checkUnsafe(*Result.Context, *base)) {
-    //                    //                        return true;
-    //                    //                    }
-    //
-    //                    std::string name = base->getQualifiedNameAsString();
-    //
-    //                    //                    std::cout << "base->getQualifiedNameAsString(): " << base->getNameAsString() << "\n";
-    //                    //                    std::cout.flush();
-    //
-    //                    //bool 	isInAnonymousNamespace () const
-    //                    if (name.find("(anonymous namespace)") != std::string::npos) {
-    //
-    //                        Diag.Report(base->getLocation(), Diag.getCustomDiagID(
-    //                                DiagnosticsEngine::Error,
-    //                                "Define classes in anonymous namespaces are not supported yet!"));
-    //                        return false;
-    //                    }
-    //
-    //
-    //                    static std::string list;
-    //                    if (list.empty()) {
-    //                        for (auto &elem : memsafe.attArgs) {
-    //
-    //                            if (!list.empty()) {
-    //                                list += "', '";
-    //                            }
-    //                            list += elem;
-    //                        }
-    //                        list.insert(0, "'");
-    //                        list += "'";
-    //                    }
-    //
-    //                    if (attr->args_size() != 1) {
-    //                        Diag.Report(base->getLocation(), Diag.getCustomDiagID(
-    //                                DiagnosticsEngine::Error,
-    //                                "Expects one string argument from the following list: %0"))
-    //                                .AddString(list);
-    //                        return false;
-    //                    }
-    //
-    //                    if (StringLiteral * str = dyn_cast_or_null<StringLiteral>(*attr->args_begin())) {
-    //
-    //                        auto found = memsafe.attArgs.find(str->getString().str());
-    //                        if (found == memsafe.attArgs.end()) {
-    //                            clang::DiagnosticBuilder DB = Diag.Report(base->getLocation(), Diag.getCustomDiagID(
-    //                                    DiagnosticsEngine::Error,
-    //                                    "Unknown argument '%0'. Expected string argument from the following list: %1"));
-    //                            DB.AddString(str->getString().str());
-    //                            DB.AddString(list);
-    //                        }
-    //
-    //
-    //                        appendDecl(*base, str->getString().str());
-    //
-    //                    }
-    //                    //                    base->dumpColor();
-    //
-    //                    //                msBaseList.insert(name);
-    //                    //                    std::cout << "Class type : " << name << "   " << attr->args_size() << " ";
-    //                    //                    for (auto &elem : attr->args()) {
-    //                    //                        //                        StringLiteral *Literal = dyn_cast_or_null<StringLiteral>(elem);
-    //                    //
-    //                    //                        if (StringLiteral * Literal = dyn_cast_or_null<StringLiteral>(elem)) {
-    //                    //                            std::cout << Literal->getString().str();
-    //                    //                        } else if (auto opt = elem->getIntegerConstantExpr(*Result.Context)) {
-    //                    //                            if (opt) {
-    //                    //                                std::cout << opt->getExtValue() << " Integer\n";
-    //                    //                            }
-    //                    //                            //                            std::cout << Integer->getLocation().printToString(*Result.SourceManager); //getSpelling();//getExprStmt()->getValue();
-    //                    //                        } else {
-    //                    //                            std::cout << " UNKNOWN '";
-    //                    //                            //                            std::cout << elem->getValueKind ();
-    //                    //                            //                            std::cout << elem->getLocation().printToString(*Result.SourceManager); //getSpelling();//getExprStmt()->getValue();
-    //                    //                            std::cout << "'";
-    //                    //                        }
-    //                    //
-    //                    //                        //                        std::cout << elem->getName();
-    //                    //                        std::cout << " ";
-    //                    //                    }
-    //                    //                    std::cout << "\n";
-    //
-    //
-    //                }
-    //                return true;
-    //
-    //            } else if (const FunctionDecl * func = Result.Nodes.getNodeAs<FunctionDecl>("func")) {
-    //
-    //                if (checkAnnotate(func, "memsafe")) {
-    //
-    //                    Diag.Report(base->getLocation(), Diag.getCustomDiagID(
-    //                            DiagnosticsEngine::Error,
-    //                            "Using regular functions for the memory safety plugin instead of template classes is not supported yet!"));
-    //                    return false;
-    //                }
-    //
-    //                //                    // Конструкторы и методы класса memsafe::Variable
-    //                //
-    //                //                    std::cout << " FunctionDecl FunctionDecl !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n";
-    //                //                    func->dumpColor();
-    //                return true;
-    //            }
-    //
-    //
-    //            if (!memsafe.isEnabled()) {
-    //                // If the plugin is disabled, we don't process or check anything anymore.
-    //                return true;
-    //            }
-    //
-    //
-    //
-    //
-    //
-    //            if (const CXXOperatorCallExpr * assign = Result.Nodes.getNodeAs<CXXOperatorCallExpr>("assign")) {
-    //                return checkAssignOp(*assign);
-    //            }
-    //
-    //
-    //
-    //
-    //            if (const FieldDecl * field = Result.Nodes.getNodeAs<FieldDecl>("field")) {
-    //
-    //                if (checkAnnotate(field, "memsafe")) {
-    //
-    //                    // Анализ для полей классов и структур пока не реализован
-    //
-    //
-    //                    field->dumpColor();
-    //
-    //                    DiagnosticsEngine &Diag = Result.Context->getDiagnostics();
-    //                    Diag.Report(field->getLocation(), Diag.getCustomDiagID(
-    //                            DiagnosticsEngine::Error, "Field not implemented!"));
-    //
-    //                    if (checkUnsafe(*Result.Context, *field)) {
-    //                        return true;
-    //                    }
-    //                }
-    //
-    //            } else if (const VarDecl * create = Result.Nodes.getNodeAs<VarDecl>("create")) {
-    //
-    //                //                if (create->getName().find("memsafe::Variable") == std::string::npos) {
-    //                //                    return;
-    //                //                }
-    //                if (checkUnsafe(*Result.Context, *create)) {
-    //                    // Mark and ignore
-    //                    return true;
-    //                }
-    //
-    //                FIXIT_DIAG(create->getLocation(), "Create variable", "create");
-    //                //                Diag.Report(create->getLocation(), Diag.getCustomDiagID(clang::DiagnosticsEngine::Remark, "Please rename this")).
-    //                //                        AddFixItHint(clang::FixItHint::CreateInsertion(create->getLocation(), "/* processed */ "));
-    //
-    //                std::cout << "VarDecl CXXConstructExpr !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! " << std::endl;
-    //                create->dumpColor();
-    //
-    //
-
-    //            return true;
-    //        }
-    //
-    //        /*
-    //         * 
-    //         * 
-    //         */
-
-    //
-    //
-    //    };
-
-    /*
-     * 
-     * 
-     * 
-     * 
-     * 
-     */
 
     struct VarInfo {
         static const int NOLEVEL = std::numeric_limits<int>::lowest();
@@ -678,6 +272,7 @@ namespace {
         static inline constexpr StringRef enableArg{"enable"};
         static inline constexpr StringRef disableArg{"disable"};
         static inline constexpr StringRef unsafeArg{"unsafe"};
+        static inline constexpr StringRef lineArg{"line"};
 
         // A list of attribute parameters that the memory safety model will work with, 
         // as well as the names of the class templates that are used to implement each data type.
@@ -687,11 +282,11 @@ namespace {
         // (i.e. namespace [[memsafa("define")]] ... )
 
         static inline const char * VALUE = "value";
-        static inline const char * SHARE = "share";
+        static inline const char * SHARED = "shared";
         static inline const char * WEAK = "weak";
         static inline const char * AUTO = "auto";
 
-        static inline const std::set<std::string> attArgs{VALUE, SHARE, WEAK, AUTO};
+        static inline const std::set<std::string> attArgs{VALUE, SHARED, WEAK, AUTO};
 
 
         std::map<std::string, std::string> clsUse;
@@ -808,24 +403,30 @@ label_done:
     class MemSafePlugin : public RecursiveASTVisitor<MemSafePlugin>, protected MemSafe {
     protected:
         CompilerInstance &Instance;
-
     public:
 
-        MemSafePlugin(CompilerInstance &I) : Instance(I) {
+        bool is_fixit;
+        int64_t line_base;
+        int64_t line_number;
+
+        MemSafePlugin(CompilerInstance &I) : Instance(I), is_fixit(false), line_base(0), line_number(0) {
         }
 
 #define FIXIT_DIAG(location, remark, type, ... ) \
-            Instance.getDiagnostics().Report(location, Instance.getDiagnostics().getCustomDiagID(clang::DiagnosticsEngine::Remark, remark)).\
-                AddFixItHint(clang::FixItHint::CreateInsertion(location, MakeFixitMessage(type __VA_OPT__(,) __VA_ARGS__)))
+            if(is_fixit){ Instance.getDiagnostics().Report(location, Instance.getDiagnostics().getCustomDiagID(clang::DiagnosticsEngine::Remark, remark)).\
+                AddFixItHint(clang::FixItHint::CreateInsertion(location, MakeFixitMessage(type, Instance.getSourceManager().getSpellingLineNumber(location) __VA_OPT__(,) __VA_ARGS__)));}
 
 #define FIXIT_ERROR(location, remark, type, ... ) \
             Instance.getDiagnostics().Report(location, Instance.getDiagnostics().getCustomDiagID(clang::DiagnosticsEngine::Error, remark)).\
-                AddFixItHint(clang::FixItHint::CreateInsertion(location, MakeFixitMessage(type __VA_OPT__(,) __VA_ARGS__)))
+                AddFixItHint(clang::FixItHint::CreateInsertion(location, MakeFixitMessage(type, Instance.getSourceManager().getSpellingLineNumber(location) __VA_OPT__(,) __VA_ARGS__)))
 
-        std::string MakeFixitMessage(const std::string_view type, int level = VarInfo::NOLEVEL, const VarInfo::DeclType parent = std::monostate()) {
-            std::string message("/* [[memsafe(\"");
+        std::string MakeFixitMessage(const std::string_view type, int64_t num, int level = VarInfo::NOLEVEL, const VarInfo::DeclType parent = std::monostate()) {
+            std::string message("/* [[memsafe(");
             message += type.begin();
-            message += "\"";
+            message += "";
+            message += ", ";
+            message += std::to_string(num - line_base + line_number);
+
             if (level != VarInfo::NOLEVEL) {
                 message += ", ";
                 message += std::to_string(level);
@@ -872,9 +473,11 @@ label_done:
             if (AnnotateAttr * attr = ns.getAttr<AnnotateAttr>()) {
                 if (attr->getAnnotation() == "memsafe") {
 
+                    auto attr_iter = attr->args_begin();
+
                     StringLiteral *attr_arg = nullptr;
-                    if (attr->args_size() == 1) {
-                        attr_arg = dyn_cast_or_null<StringLiteral>(*attr-> args_begin()); //getArgAsExpr(0));
+                    if (attr->args_size() >= 1) {
+                        attr_arg = dyn_cast_or_null<StringLiteral>(*attr_iter);
                     }
 
                     if (!attr_arg) {
@@ -929,6 +532,26 @@ label_done:
                         Instance.getDiagnostics().Report(ns.getLocation(), Instance.getDiagnostics().getCustomDiagID(
                                 DiagnosticsEngine::Remark,
                                 "Memory safety plugin is disabled!"));
+
+                    } else if (MemSafe::lineArg.compare(attr_arg->getString()) == 0) {
+
+                        IntegerLiteral *line_arg = nullptr;
+                        if (attr->args_size() >= 2) {
+                            attr_iter++;
+//                            (*attr_iter)->dump();
+                            line_arg = dyn_cast_or_null<IntegerLiteral>(*attr_iter);
+                        }
+
+                        if (!line_arg) {
+                            Instance.getDiagnostics().Report(ns.getLocation(), Instance.getDiagnostics().getCustomDiagID(
+                                    DiagnosticsEngine::Error,
+                                    "Line number diagnostic expected numeric second argument!"));
+                            return false;
+                        }
+
+                        line_base = Instance.getSourceManager().getSpellingLineNumber(line_arg->getLocation());
+                        line_number = line_arg->getValue().getSExtValue();
+
                     } else {
 
                         clang::DiagnosticBuilder DB = Instance.getDiagnostics().Report(ns.getLocation(), Instance.getDiagnostics().getCustomDiagID(
@@ -1032,12 +655,12 @@ next_parent:
                 return nullptr;
             }
 
-            clang::QualType type; 
-            
+            clang::QualType type;
+
             const ValueDecl *value = decl->getDecl();
 
-            if(value){
-                type = value->getType ();
+            if (value) {
+                type = value->getType();
             } else {
                 type = expr->getType();
             }
@@ -1045,7 +668,7 @@ next_parent:
             const char * name = checkClassName(type.getUnqualifiedType().getAsString());
 
 
-//            std::cout << name << "  " << type.getUnqualifiedType().getAsString() << " !!!!!!!!!!!!!!\n\n";
+            //            std::cout << name << "  " << type.getUnqualifiedType().getAsString() << " !!!!!!!!!!!!!!\n\n";
 
             iter = varList.find(decl->getNameInfo().getAsString());
 
@@ -1086,8 +709,8 @@ next_parent:
 
 
                 if (found_left && found_right
-                        && std::string_view(MemSafe::SHARE).compare(found_left) == 0
-                        && std::string_view(MemSafe::SHARE).compare(found_right) == 0) {
+                        && std::string_view(MemSafe::SHARED).compare(found_left) == 0
+                        && std::string_view(MemSafe::SHARED).compare(found_right) == 0) {
 
                     if (var_left->second.level != var_right->second.level) {
 
@@ -1121,8 +744,8 @@ next_parent:
                 const char * found_right = expandAssignArgs(assign.getArg(1), right, var_right);
 
 
-                if (std::string_view(MemSafe::SHARE).compare(found_left) == 0
-                        && std::string_view(MemSafe::SHARE).compare(found_right) == 0) {
+                if (std::string_view(MemSafe::SHARED).compare(found_left) == 0
+                        && std::string_view(MemSafe::SHARED).compare(found_right) == 0) {
 
                     if (var_left->second.level >= var_right->second.level) {
 
@@ -1236,14 +859,16 @@ next_parent:
             // Mark only                
             checkUnsafe(var);
 
-
             VarInfo::DeclType parent_name = std::monostate();
             int level = 0;
 
-//            llvm::outs() << "\nclang::DynTypedNodeList NodeList = Result.Context->getParents(*var)\n";
+            //            llvm::outs() << "\nclang::DynTypedNodeList NodeList = Result.Context->getParents(*var)\n";
 
-            if (var.getStorageDuration() != SD_Static) {
-                parent_name = findParenName(Instance.getASTContext().getParents(var), level);
+            parent_name = findParenName(Instance.getASTContext().getParents(var), level);
+            if (var.getStorageDuration() == SD_Static) {
+                if (std::string_view(MemSafe::AUTO).compare(found_type) == 0) {
+                    FIXIT_ERROR(var.getLocation(), "Create auto variabe as static", "error");
+                }
             }
 
             AddVariable(var, found_type, level, parent_name);
@@ -1283,7 +908,7 @@ next_parent:
                 if (std::string_view(MemSafe::AUTO).compare(found_type) == 0) {
                     FIXIT_ERROR(ret.getRetValue()->getExprLoc(), "Return auto type", "error");
                     return true;
-                } else if (std::string_view(MemSafe::SHARE).compare(found_type) == 0) {
+                } else if (std::string_view(MemSafe::SHARED).compare(found_type) == 0) {
                     FIXIT_ERROR(ret.getRetValue()->getExprLoc(), "Return share type", "error");
                     return true;
                 }
@@ -1341,11 +966,9 @@ next_parent:
      */
 
     class MemSafePluginASTConsumer : public ASTConsumer {
-    private:
+    public:
 
-        MemSafePlugin myclass;
-
-        bool DoRewrite;
+        MemSafePlugin plugin;
         FixItRewriterOptions FixItOptions;
 
         /*
@@ -1366,7 +989,7 @@ next_parent:
 
             std::unique_ptr<clang::FixItRewriter> Rewriter;
 
-            if (DoRewrite) {
+            if (!FixItOptions.RewriteSuffix.empty()) {
 
                 Rewriter = std::make_unique<clang::FixItRewriter>(context.getDiagnostics(),
                         context.getSourceManager(),
@@ -1379,88 +1002,20 @@ next_parent:
 
             }
 
-            myclass.TraverseDecl(context.getTranslationUnitDecl());
+            plugin.is_fixit = !!Rewriter;
+            plugin.TraverseDecl(context.getTranslationUnitDecl());
 
-
-
-            // The FixItRewriter is quite a heavy object, so let's
-            // not create it unless we really have to.
 
             if (Rewriter) {
-
                 Rewriter->WriteFixedFiles();
             }
 
         }
 
 
-
-
-
-
     public:
 
-        MemSafePluginASTConsumer(CompilerInstance & Instance) :
-        myclass(Instance), DoRewrite(true), FixItOptions(".memsafe") {
-
-
-            //            // https://clang.llvm.org/docs/LibASTMatchersReference.html
-            //            //    Node Matchers: Matchers that match a specific type of AST node.
-            //            //    Narrowing Matchers: Matchers that match attributes on AST nodes.
-            //            //    Traversal Matchers: Matchers that allow traversal between AST nodes.
-            //
-            //            matcher.addMatcher(namespaceDecl().bind("ns"), &hMemSafe);
-            //
-            //
-            //            // A non-instant template is not needed for analysis. And an instantiated template always has cxxRecordDecl
-            //            // matcher.addMatcher(classTemplateSpecializationDecl(hasAnyBase(hasType(cxxRecordDecl(hasName(memsafeBase))))).bind("templ"), &hMemSafe);
-            //            //            matcher.addMatcher(cxxRecordDecl(hasAnyBase(hasType(cxxRecordDecl(hasName(memsafeBase))))).bind("base"), &hMemSafe);
-            //            matcher.addMatcher(cxxRecordDecl().bind("cls"), &hMemSafe);
-            //
-            //
-            //            //            varDecl(
-            //            //                    has(
-            //            //                    cxxConstructExpr()
-            //            //                    )
-            //            //                    , hasType(
-            //            //                    classTemplateSpecializationDecl().bind(sp_dcl_bd_name_)
-            //            //                    )
-            //            //                    ).bind("var");
-            //            //            matcher.addMatcher(
-            //            //                    varDecl(
-            //            //                    has(cxxConstructExpr())
-            //            //                    , hasType(
-            //            //                    classTemplateSpecializationDecl()//.bind(memsafeBase)
-            //            //                    )).bind("create"), &hMemSafe);
-            //            //            matcher.addMatcher(cxxConstructExpr().bind("create"), &hMemSafe);
-            //
-            //
-            //            //matcher.addMatcher(recordDecl().bind("base"), &hMemSafe);
-            //
-            //            matcher.addMatcher(functionDecl().bind("func"), &hMemSafe);
-            //            matcher.addMatcher(varDecl().bind("var"), &hMemSafe);
-            //            matcher.addMatcher(fieldDecl().bind("field"), &hMemSafe);
-            //
-            //
-            //
-            //            matcher.addMatcher(callExpr(callee(functionDecl(hasName("operator=")))).bind("assign"), &hMemSafe); //
-            //            //            matcher.addMatcher(binaryOperator().bind("assign"), &hMemSafe);
-            //            //            matcher.addMatcher(binaryOperator(hasOperatorName("=")).bind("op"), &hMemSafe);
-            //
-            //            matcher.addMatcher(returnStmt().bind("ret"), &hMemSafe);
-            //            matcher.addMatcher(callExpr(callee(functionDecl(hasName("swap")))).bind("swap"), &hMemSafe);
-            //
-            //
-            //
-            //
-            //
-            //
-            //            //            matcher.addMatcher(compoundStmt().bind("compoundStmt"), &hMemSafe);
-            //            //            matcher.addMatcher(returnStmt().bind("returnStmt"), &hMemSafe);
-            //
-            //            //            matcher.addMatcher(objcPropertyDecl().bind("objcPropertyDecl"), &hMemSafe);
-            //            //
-            //            //            matcher.addMatcher(binaryOperator(hasOperatorName("=")).bind("binaryOperator"), &hMemSafe);
+        MemSafePluginASTConsumer(CompilerInstance & Instance) : plugin(Instance), FixItOptions("") {
         }
 
     };
@@ -1473,34 +1028,35 @@ next_parent:
      */
 
     class MemSafePluginASTAction : public PluginASTAction {
+        std::string fixit_file_ext;
     public:
 
         std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &Compiler, StringRef InFile) override {
-
-            return std::unique_ptr<MemSafePluginASTConsumer>(new MemSafePluginASTConsumer(Compiler));
+            std::unique_ptr<MemSafePluginASTConsumer> obj = std::unique_ptr<MemSafePluginASTConsumer>(new MemSafePluginASTConsumer(Compiler));
+            obj->FixItOptions.RewriteSuffix = fixit_file_ext;
+            return obj;
         }
 
         bool ParseArgs(const CompilerInstance &CI, const std::vector<std::string> &args) override {
             std::cout << std::unitbuf;
 
-            //            for (auto &elem : args) {
-            //                if (elem.compare("base=") > 0) {
-            //                    memsafeBase = elem.substr(5);
-            //                    if (memsafeBase.empty()) {
-            //                        std::cerr << "A base class memory safety plugin cannot have an empty name!";
-            //                        return false;
-            //                    }
-            //                } else {
-            //                    // Включение вывода диагностических сообщений о каждом найденном совпадении в AST ?????????????
-            //                    std::cerr << "Unknown plugin argument: '" << elem << "'!";
-            //                    return false;
-            //                }
-            //            }
-            //
-            //            std::cout << "The memory safety plugin uses the '" << memsafeBase << "' base template.\n";
-            //            std::string temp(memsafeBase);
-            //            temp += "<"; // For template name
-            //            msBaseList.insert(temp);
+            for (auto &elem : args) {
+                if (elem.compare("fixit=") > 0) {
+                    fixit_file_ext = elem.substr(6);
+                    if (fixit_file_ext.empty()) {
+                        std::cerr << "To enable FixIt output to a file, you must specify the extension of the file being created!";
+                        return false;
+                    }
+                    if (fixit_file_ext[0] != '.') {
+                        fixit_file_ext.insert(0, ".");
+                    }
+                    std::cout << "\033[1;46;34mEnabled FixIt output to a file with the extension: '" << fixit_file_ext << "'\033[0m\n";
+                } else {
+                    // Включение вывода диагностических сообщений о каждом найденном совпадении в AST ?????????????
+                    std::cerr << "Unknown plugin argument: '" << elem << "'!";
+                    return false;
+                }
+            }
 
             return true;
         }
