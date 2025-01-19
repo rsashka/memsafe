@@ -1,5 +1,73 @@
-# Memory Safety Concept in C++
+# Memory Safety сoncept in C++
 
+> The global problem of C and C++ languages ​​is that the pointer to the allocated memory block on the heap is an address
+in RAM and there is no connection between it and the variables - pointers that are in local variables on the stack.
+
+> The second, no less serious problem, which often leads to undefined behavior (Undefined Behavior) 
+or data races (Data Races) is access to the same memory area from different threads at the same time.
+
+[Safe Memory for C++](https://github.com/rsashka/memsafe) is based on the idea of ​​using strong and weak pointers 
+to the allocated memory block on the heap and managing the lifetime of copies of variables using strong pointers.
+
+This is a bit similar to [Rust's concept of ownership and borrowing](https://doc.rust-lang.org/book/ch04-00-understanding-ownership.html), 
+but which is implemented based on strong and weak references (standard C++ patterns *shared_ptr* and *weak_ptr*), 
+and is therefore fully compatible with the latter at a low level.
+
+Any operations with the variable's data by reference are possible only after its dereferencing, 
+i.e. after converting a weak reference (*weak_ptr*) to a strong one (*shared_ptr*), 
+and the capture of the inter-thread synchronization object happens automatically 
+in the reference dereferencing operator (if the variable uses one).
+
+This mechanism is implemented at the **syntax level** and is performed **at compile time** by the compiler plugin,
+while at runtime only the thread ID is checked for single-threaded references.
+
+
+### Variable Types
+It is impossible to allocate or free a memory area manually. 
+Memory allocation and freeing for an object occurs automatically when variables are created/deleted 
+(on the stack or on the heap), which is why variables in a program are divided into two types by lifetime:
+- Permanent variables - are global and static variables that are created statically or on the heap 
+and retain their value after the end of the code block in which they were created or defined (after exiting the current scope).
+- Temporary (automatic) variables - are function arguments and local variables that are created 
+and destroyed by the compiler automatically. Temporary objects are accessible only from the lexical context in which they were defined.
+Such variables are placed on the stack and destroyed when exiting the code block in which they were created.
+
+The implemented concept of safe memory management uses several template classes, 
+each of which is responsible for its own type of variables or a specific action:
+
+- VarValue (variable by value) — data is stored directly in the variable itself.
+These are variables in their classical sense, when a copy of a variable creates a duplicate of the original value, 
+and changing a copy of the variable does not affect the original in any way.
+*You cannot create a reference to a variable by value (for this you need to use a shared or guard variable)*.
+
+- VarShared (shared variable) — the variable contains only a strong (owning) pointer to a variable by value, 
+while memory for data is allocated statically or in a shared heap. 
+A copy of a reference variable creates a copy of the pointer and **increases the ownership counter**.
+*A reference variable is intended for use only in the current thread and does not have a built-in mechanism for synchronizing inter-thread access.*
+
+- VarGuarg (guard variable) — also a shared variable, but with a built-in mechanism for synchronizing inter-thread access. 
+Making a copy of a guard variable copies only the strong pointer and **increments the ownership counter**.
+*Intended for data that can be accessed from different threads.*
+
+- VarWeak (pointer variable) - the variable contains only a weak (non-owning) pointer to the reference variable.
+Making a copy of a reference variable copies only the weak pointer **without incrementing the ownership counter**.
+
+- VarAuto - a helper object for accessing data from the above variable types, 
+[which provides a RAII-style mechanism for owning a captured value for the duration of a bounded block](https://en.cppreference.com/w/cpp/thread/lock_guard). 
+*Lock access (if necessary) and converting a weak pointer to a strong one (i.e. effectively
+[dereferencing a pointer](https://www.gnu.org/software/c-intro-and-ref/manual/html_node/Pointer-Dereference.html)) are performed as a single operation.*
+
+### Rules for copying and processing variables
+A formalized list of rules that are checked (must be checked) in the lexical analyzer based on the included compiler plugin.
+- Variables by value and weak pointers can be copied from one variable to another without any restrictions.
+- Shared and guard variables can only be copied to automatic variables of a lower lexical level or passed as an argument to a function when it is called.
+- Returning guard and shared variables from functions passed as arguments or having a reference ownership count greater than one is prohibited.
+- Store captured values in VarAuto ​​as static variables is prohibited.
+- The [swap](https://en.cppreference.com/w/cpp/algorithm/swap) operation for guard and shared variables 
+is only allowed between variables of the same lexical level.
+
+
+---
 
 
 ## Концепция безопасной работы с памятью для С++

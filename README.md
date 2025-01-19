@@ -1,7 +1,231 @@
 # C++ Memory safety (memsafe)
 
+## Safe Development in C++
+
+C++'s ambition to become a "safer" programming language does not fit well with the requirements of the language standard.
+
+Any C++ standard must provide backward compatibility with old legacy code, 
+which automatically nullifies any attempts to add any keywords at the C++ standard level.
+
+And since the current state of C++ cannot guarantee secure development at the standards level, it turns out that:
+- Adopting new C++ standards with a change in the language vocabulary for secure development 
+will necessarily break backward compatibility with existing legacy code.
+- Rewriting the entire existing C++ code base (if such standards were adopted) 
+is no cheaper than rewriting the same code in a new fashionable programming language.
+
+And the way out of this situation is to implement *safe C++ syntax* that would satisfy both of these requirements. 
+Moreover, the best option would be not to adopt any new C++ standards at all to change the vocabulary, 
+but to try to use the existing ones, adopted earlier.
+
+*Additional syntactic analysis by means of third-party applications (static analyzers, 
+for example, based on Clang-Tidy) **is not considered**, since any solution external 
+to the compiler will always contain at least one significant drawback - the need for synchronous support 
+and use of the same modes of compilation of program source texts, 
+which for C++ with its preprocessor can be a very non-trivial task.*
 
 
+## Proof of Concept
+
+This repository contains code for an example of marking C++ objects (types, templates, etc.)
+using custom attributes and then lexically analyzing them using a compiler plugin.
+It is based on the [memory safety in C++](https://github.com/rsashka/memsafe/blob/main/memsafe_concept.md) concept prototype.
+
+The method of marking objects in C++ program code using attributes is very similar to the one proposed in the security profiles
+[p3038](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p3038r0.pdf) by Bjarne Stroustrup
+and [P3081](https://isocpp.org/files/papers/P3081R0.pdf) by Herb Sutter,
+but does not require the development of a new C++ standard (it is enough to use the existing C++20).
+
+Since such additional checks will most likely not work for old legacy code,
+therefore their implementation using disableable compiler plugins is most preferable.
+
+The project on safe work with memory in C++ is currently implemented **partially**:
+- Standard development tools are used in the form of a plugin for the compiler
+(the plugin is made for Clang, but GCC also allows using plugins)
+- Does not break backward compatibility with the old source code, since it does not change the C++ dictionary,
+and the new code can be compiled by any compiler without using a plugin (at least the C++20 standard)
+- Allows you to write new code with strict checking of safe work with memory based on formalized syntax rules,
+and the dictionary checking rules can be quickly supplemented as they are clarified and without changing the compiler itself.
+- A detailed description of the concept of safe work with memory in C++ is given [here](https://github.com/rsashka/memsafe/blob/main/memsafe_concept.md).
+It is based on the idea of ​​using strong and weak pointers to an allocated block of memory on the heap
+and managing the lifetime of copies of variables using strong pointers.
+It is a bit similar to the concept of [ownership and borrowing from the Rust language](https://doc.rust-lang.org/book/ch04-00-understanding-ownership.html),
+but is implemented based on strong and weak references (standard C++ mechanisms *shared_ptr* and *weak_ptr*),
+and therefore is fully compatible with the latter at a low level.
+
+
+## Disclaimer
+
+##### *Checking of lexical rules of copying and borrowing is implemented partially and this code is not intended for industrial use, but serves only to demonstrate the functionality of the concept of checking lexical rules using a compiler plugin without breaking backward compatibility with existing C++ code!*
+
+### Implementation details:
+- The implementation is implemented as a single header file [memsafe.h](https://github.com/rsashka/memsafe/blob/main/memsafe.h) +
+[compiler plugin](https://github.com/rsashka/memsafe/blob/main/memsafe_clang.cpp).
+- Syntax checking of the correctness of class usage occurs in the plugin, which is dynamically connected during compilation.
+- Each used template class is marked with the `[[memsafe(...)]]` attribute according to its purpose
+and when checking the dictionary, the names of template classes are searched for the presence of the specified attributes.
+- The plugin is designed for Clang (the current version of clang-19 is used)
+- Checking of syntax rules is activated automatically when the plugin is connected
+using the built-in function `__has_attribute(memsafe)`.
+
+If the plugin is missing during compilation, then the use of attributes is disabled using preprocessor macros
+to suppress warnings like `warning: unknown attribute 'memsafe' passed [-Wunknown-attributes]`.
+- For testing and debugging purposes, the plugin can create a copy of the analyzed file,
+with the addition of marks in the form of ordinary comments about the use of syntax rules or errors found for their subsequent analysis.
+- The standard [clang::FixItRewriter](https://clang.llvm.org/doxygen/classclang_1_1FixItRewriter.html) method is used to create a copy of the file,
+the output of which can be used in any development environment that supports it.
+
+### Quick examples:
+
+<details>
+<summary>A fragment of correct C++ code: </summary>
+   
+```cpp
+    #include "memsafe.h"
+
+    using namespace memsafe;
+
+    namespace MEMSAFE_ATTR("unsafe") {
+        // Plugin checks are ignored
+        VarShared<int> var_unsafe1(1);
+        memsafe::VarShared<int> var_unsafe2(2);
+        memsafe::VarShared<int> var_unsafe3(3);
+    }
+    
+    memsafe::VarValue<int> var_value(1);
+    memsafe::VarShared<int> var_share(1);
+    memsafe::VarGuard<int, memsafe::VarSyncMutex> var_guard(1);
+
+    static memsafe::VarValue<int> var_static(1);
+    static auto static_fail1(var_static.take()); // Correct C++ code, but incorrect for memsafe
+    
+    memsafe::VarShared<int> stub_function(memsafe::VarShared<int> arg, memsafe::VarValue<int> arg_val) {
+
+        memsafe::VarShared<int> var_shared1(1);
+        memsafe::VarShared<int> var_shared2(1);
+
+        var_shared1 = var_shared2; // Correct C++ code, but incorrect for memsafe
+        {
+            memsafe::VarShared<int> var_shared3(3);
+            var_shared3 = var_shared1; // OK
+
+            std::swap(var_shared1, var_shared3); // Correct C++ code, but incorrect for memsafe
+        }
+
+        return 777; // OK
+    }
+
+    memsafe::VarShared<int> stub_function8(memsafe::VarShared<int> arg) {
+        return arg; // Correct C++ code, but incorrect for memsafe
+    }
+
+```
+</details>
+
+
+Command line for connecting the plugin `clang++ -std=c++20 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe _example.cpp`
+
+<details>
+<summary>The output of the compiler plugin with error messages about using the memsafe library classes: </summary>
+
+```bash
+clang++-19 -std=c++20   -c -g -DBUILD_UNITTEST -I. -std=c++20 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -MMD -MP -MF "build/UNITTEST/CLang-19-Linux/_example.o.d" -o build/UNITTEST/CLang-19-Linux/_example.o _example.cpp
+
+Register template class 'memsafe::VarAuto' and 'VarAuto' with 'auto' attribute!
+Register template class 'memsafe::VarValue' and 'VarValue' with 'value' attribute!
+Register template class 'memsafe::VarShared' and 'VarShared' with 'shared' attribute!
+Register template class 'memsafe::VarGuard' and 'VarGuard' with 'shared' attribute!
+Register template class 'memsafe::VarWeak' and 'VarWeak' with 'weak' attribute!
+In file included from _example.cpp:1:
+./memsafe.h:645:38: remark: Memory safety plugin is enabled!
+  645 |     namespace MEMSAFE_ATTR("enable") {
+      |                                      ^
+_example.cpp:25:17: error: Create auto variabe as static
+   25 |     static auto static_fail1(var_static.take());
+      |                 ^
+      |                 /* [[memsafe(error, 3002)]] */ 
+_example.cpp:26:17: error: Create auto variabe as static
+   26 |     static auto static_fail2 = var_static.take();
+      |                 ^
+      |                 /* [[memsafe(error, 3003)]] */ 
+_example.cpp:52:21: error: Cannot copy a shared variable to an equal or higher lexical level
+   52 |         var_shared1 = var_shared1;
+      |                     ^
+      |                     /* [[memsafe(error, 4024)]] */ 
+_example.cpp:53:21: error: Cannot copy a shared variable to an equal or higher lexical level
+   53 |         var_shared1 = var_shared2;
+      |                     ^
+      |                     /* [[memsafe(error, 4025)]] */ 
+_example.cpp:57:25: error: Cannot copy a shared variable to an equal or higher lexical level
+   57 |             var_shared1 = var_shared1;
+      |                         ^
+      |                         /* [[memsafe(error, 4029)]] */ 
+_example.cpp:58:25: error: Cannot copy a shared variable to an equal or higher lexical level
+   58 |             var_shared2 = var_shared1;
+      |                         ^
+      |                         /* [[memsafe(error, 4030)]] */ 
+_example.cpp:59:25: error: Cannot copy a shared variable to an equal or higher lexical level
+   59 |             var_shared3 = var_shared1;
+      |                         ^
+      |                         /* [[memsafe(error, 4031)]] */ 
+_example.cpp:65:29: error: Cannot copy a shared variable to an equal or higher lexical level
+   65 |                 var_shared1 = var_shared1;
+      |                             ^
+      |                             /* [[memsafe(error, 4037)]] */ 
+_example.cpp:66:29: error: Cannot copy a shared variable to an equal or higher lexical level
+   66 |                 var_shared2 = var_shared1;
+      |                             ^
+      |                             /* [[memsafe(error, 4038)]] */ 
+_example.cpp:67:29: error: Cannot copy a shared variable to an equal or higher lexical level
+   67 |                 var_shared3 = var_shared1;
+      |                             ^
+      |                             /* [[memsafe(error, 4039)]] */ 
+_example.cpp:69:29: error: Cannot copy a shared variable to an equal or higher lexical level
+   69 |                 var_shared4 = var_shared1;
+      |                             ^
+      |                             /* [[memsafe(error, 4041)]] */ 
+_example.cpp:70:29: error: Cannot copy a shared variable to an equal or higher lexical level
+   70 |                 var_shared4 = var_shared3;
+      |                             ^
+      |                             /* [[memsafe(error, 4042)]] */ 
+_example.cpp:72:29: error: Cannot copy a shared variable to an equal or higher lexical level
+   72 |                 var_shared4 = var_shared4;
+      |                             ^
+      |                             /* [[memsafe(error, 4044)]] */ 
+_example.cpp:77:13: error: Cannot swap a shared variables of different lexical levels
+   77 |             std::swap(var_shared1, var_shared3);
+      |             ^
+      |             /* [[memsafe(error, 4049)]] */ 
+_example.cpp:95:16: error: Return share type
+   95 |         return arg;
+      |                ^
+      |                /* [[memsafe(error, 5004)]] */ 
+15 errors generated.
+```
+</details>
+
+
+### Description and main commands (attributes in C++ code)
+By default, checking of additional lexical rules is disabled.
+
+The following commands enable or disable lexical checking of memory safety rules:
+- `namespace [[memsafe("define")]] NAME { ... }` - defines the namespace `NAME`, in which the module's template classes will be located.
+- `[[memsafe("value")]]`, `[[memsafe("shared")]]`, `[[memsafe("guard")]]`, `[[memsafe("auto")]]` and `[[memsafe("weak")]]` - attributes
+for marking template classes in the [project header file](https://github.com/rsashka/memsafe/blob/main/memsafe.h).
+- `namespace [[memsafe("enable")]] { }` - command to enable the compiler plugin parser for template classes,
+marked with attributes in the `NAME` namespace until the end of the file or until the disable command.
+- `namespace [[memsafe("disable")]] { }` - command to disable the compiler plugin parser until the end of the file or until the enable command.
+- `namespace [[memsafe("unsafe")]] { ... }` - definition of a namespace, including anonymous, in which the parser
+ignores safe usage errors of memsafe classes.
+It is possible to use the `[[memsafe("unsafe")]]` attribute for individual operators, but this is not currently implemented.
+(For example, you can't currently do something like `[[memsafe("unsafe")]] return nullptr;` to disable the check for one specific statement.
+This requires a newer version of clang with an implementation of [Pull requests #110334](https://github.com/llvm/llvm-project/pull/110334))
+
+Currently (for the purpose of demonstrating the concept functionality), the plugin implements the following dictionary checks:
+- Disable copying of reference and protected variables within the same level (marked with `[[memsafe("shared")]]`)
+- Disable sharing values ​​between two reference variables of different levels (marked with `[[memsafe("shared")]]`)
+- Disable creating static captured variables, marked with `[[memsafe("auto")]]`
+- Disable returning captured (automatic) variables from a function (marked with `[[memsafe("auto")]]`)
+- Prevent returning reference and protected variables from a function, except for those created directly in the return statement
 
 ## Feedback
 If you have any suggestions for the development and improvement of the project, join or [write](https://github.com/rsashka/memsafe/discussions).
