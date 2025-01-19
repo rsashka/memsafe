@@ -222,7 +222,7 @@ This requires a newer version of clang with an implementation of [Pull requests 
 
 ### Currently (for the purpose of demonstrating the concept functionality), the plugin implements the following dictionary checks:
 - Disable copying of reference and protected variables within the same level (marked with `[[memsafe("shared")]]`)
-- Disable sharing values ​​between two reference variables of different levels (marked with `[[memsafe("shared")]]`)
+- Disable swap values ​​between two reference variables of different levels (marked with `[[memsafe("shared")]]`)
 - Disable creating static captured variables, marked with `[[memsafe("auto")]]`
 - Disable returning captured (automatic) variables from a function (marked with `[[memsafe("auto")]]`)
 - Prevent returning reference and protected variables from a function, except for those created directly in the return statement
