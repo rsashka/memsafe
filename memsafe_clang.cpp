@@ -71,14 +71,6 @@ namespace {
 
                 return true;
 
-                //            } else if (!isa<FunctionDecl>(D)) {
-                //
-                //                D->dumpColor();
-                //
-                //                S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type_str)
-                //                        << Attr << Attr.isRegularKeywordAttribute() << "functions or method";
-                //
-                //                return false;
             }
 
             return false;
@@ -137,10 +129,10 @@ namespace {
          */
 
         bool diagAppertainsToStmt(Sema &S, const ParsedAttr &Attr, const Stmt *St) const override {
-//            St->dumpColor();
-//            std::cout << "diagAppertainsToStmt " << isa<ReturnStmt>(St) << "\n";
-//            std::cout.flush();
-            return true;//isa<ReturnStmt>(St);
+            //            St->dumpColor();
+            //            std::cout << "diagAppertainsToStmt " << isa<ReturnStmt>(St) << "\n";
+            //            std::cout.flush();
+            return true; //isa<ReturnStmt>(St);
         }
         //
         //        AttrHandling handleStmtAttribute(Sema &S, Stmt *St, const ParsedAttr &Attr) const override {
@@ -386,18 +378,17 @@ label_done:
     };
 
     /*
-     * Проблема типового подхода к анализу AST с помощью visitor и matcher в следующем.
-     * Оба способа ориентированы на поиск отдельных узлов по заранее определнным условиям,
-     * из-за чего применение некоторый условий поиска затруднительно из-за их взаимой связи.
-     * 
-     * Можно было бы обойтись реализацией единственного match anyOf(decl(),stmt()), но это невозможно 
-     * из-за разного типа возвращаемого значения  (Input value has unresolved overloaded type: Matcher<Decl>&Matcher<Stmt>).
-     * 
-     * Решением является реализация собственного RecursiveASTVisitor,
-     * в котором проход применяет условия поиска к каждому узлу последовательно,
-     * с учетом текущего состояния объекта и не зависит от типа анализируемого узла
-     * (и это понятнее, чем вручную получать Stmt с помощью getBody у Decl для Matchers).
-     * 
+     * The problem with the typical approach to AST parsing using visitor and matcher is the following.
+     * Both methods focus on finding individual nodes based on predefined conditions,
+     * making it difficult to apply some search conditions because of their interrelationships.
+     *
+     * It would be possible to implement a single anyOf(decl(),stmt()) matcher, but this is not possible
+     * because of different return types (the input value has an unresolved overloaded type: Matcher<Decl>&Matcher<Stmt>).
+     *
+     * The solution is to implement your own RecursiveASTVisitor,
+     * where the pass applies the search conditions to each node sequentially,
+     * taking into account the current state of the object and is independent of the type of the node being parsed
+     * (and this is cleaner than manually getting Stmt using getBody in Decl for Matchers).
      */
 
     class MemSafePlugin : public RecursiveASTVisitor<MemSafePlugin>, protected MemSafe {
@@ -538,7 +529,7 @@ label_done:
                         IntegerLiteral *line_arg = nullptr;
                         if (attr->args_size() >= 2) {
                             attr_iter++;
-//                            (*attr_iter)->dump();
+                            //                            (*attr_iter)->dump();
                             line_arg = dyn_cast_or_null<IntegerLiteral>(*attr_iter);
                         }
 
@@ -732,9 +723,7 @@ next_parent:
 
             if (assign.getNumArgs() == 2) {
 
-                //            const Expr *expr_left = dyn_cast_or_null<Expr>(assign->getArg(0));
-                //            const Expr *expr_right = dyn_cast_or_null<Expr>(assign->getArg(1));
-                //
+
                 const DeclRefExpr * left;
                 MemSafe::VAR_LIST_ITER var_left;
                 const char * found_left = expandAssignArgs(assign.getArg(0), left, var_left);
@@ -776,14 +765,8 @@ next_parent:
 
                 //  Mark only
                 checkUnsafe(base);
-                //                    if (checkUnsafe(*Result.Context, *base)) {
-                //                        return true;
-                //                    }
 
                 std::string name = base.getQualifiedNameAsString();
-
-                //                    std::cout << "base->getQualifiedNameAsString(): " << base->getNameAsString() << "\n";
-                //                    std::cout.flush();
 
                 //bool 	isInAnonymousNamespace () const
                 if (name.find("(anonymous namespace)") != std::string::npos) {
@@ -838,9 +821,6 @@ next_parent:
 
         bool checkVarDecl(const VarDecl &var) {
 
-            // Определение обычных переменных
-            // Тут нужно маркировать глубину вложенности каждой из них для поседущего анализа в дельнейшем
-
             //hasAutomaticStorageDuration()
             //hasGlobalStorage()
             //hasThreadStorageDuration()
@@ -862,7 +842,7 @@ next_parent:
             VarInfo::DeclType parent_name = std::monostate();
             int level = 0;
 
-            //            llvm::outs() << "\nclang::DynTypedNodeList NodeList = Result.Context->getParents(*var)\n";
+            // llvm::outs() << "\nclang::DynTypedNodeList NodeList = Result.Context->getParents(*var)\n";
 
             parent_name = findParenName(Instance.getASTContext().getParents(var), level);
             if (var.getStorageDuration() == SD_Static) {
@@ -880,27 +860,15 @@ next_parent:
         bool checkReturnStmt(const ReturnStmt & ret) {
 
 
-            //            matcher.addMatcher(callExpr(callee(functionDecl(hasName("swap")))).bind("swap"), &hMemSafe);
-
-
             if (const ExprWithCleanups * inplace = dyn_cast_or_null<ExprWithCleanups>(ret.getRetValue())) {
                 FIXIT_DIAG(inplace->getBeginLoc(), "Return inplace", "approved");
                 return true;
             }
 
-            //return arg;
-            //CXXConstructExpr 0x7c2e294c3808 'memsafe::VarShared<int>':'class memsafe::VarShared<int>' 'void (VarShared<int> &)'
-            //`-DeclRefExpr 0x7c2e294c37e8 'memsafe::VarShared<int>':'class memsafe::VarShared<int>' lvalue ParmVar 0x7c2e294c0aa0 'arg' 'memsafe::VarShared<int>':'class memsafe::VarShared<int>'
-
             if (const CXXConstructExpr * expr = dyn_cast_or_null<CXXConstructExpr>(ret.getRetValue())) {
 
 
-                //                FIXIT_DIAG(assign->getOperatorLoc(), "Assign value", "???");
-                //
                 const char * found_type = checkClassName(expr->getType().getAsString());
-                //                    std::cout << "ReturnStmt CXXConstructExpr " << expr->getType().getAsString() << " " << found_type << " !!!!!!!!!!!!!!!!!!!!!!!!!!!!!! \n";
-                //                    std::cout.flush();
-                //                    expr->dumpColor();
                 if (!found_type) {
                     return true;
                 }
@@ -978,13 +946,6 @@ next_parent:
          * 
          */
 
-        // const DeclContext * 	getDeclContext () const
-        // const TranslationUnitDecl * 	getTranslationUnitDecl () const
-        // bool 	isFunctionOrFunctionTemplate () const
-        // const FunctionDecl * 	getAsFunction () const
-        // TemplateDecl * 	getDescribedTemplate () const
-        // virtual Stmt * 	getBody () const 
-
         void HandleTranslationUnit(ASTContext &context) override {
 
             std::unique_ptr<clang::FixItRewriter> Rewriter;
@@ -1052,7 +1013,6 @@ next_parent:
                     }
                     std::cout << "\033[1;46;34mEnabled FixIt output to a file with the extension: '" << fixit_file_ext << "'\033[0m\n";
                 } else {
-                    // Включение вывода диагностических сообщений о каждом найденном совпадении в AST ?????????????
                     std::cerr << "Unknown plugin argument: '" << elem << "'!";
                     return false;
                 }
