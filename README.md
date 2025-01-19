@@ -220,7 +220,7 @@ It is possible to use the `[[memsafe("unsafe")]]` attribute for individual opera
 (For example, you can't currently do something like `[[memsafe("unsafe")]] return nullptr;` to disable the check for one specific statement.
 This requires a newer version of clang with an implementation of [Pull requests #110334](https://github.com/llvm/llvm-project/pull/110334))
 
-Currently (for the purpose of demonstrating the concept functionality), the plugin implements the following dictionary checks:
+### Currently (for the purpose of demonstrating the concept functionality), the plugin implements the following dictionary checks:
 - Disable copying of reference and protected variables within the same level (marked with `[[memsafe("shared")]]`)
 - Disable sharing values ​​between two reference variables of different levels (marked with `[[memsafe("shared")]]`)
 - Disable creating static captured variables, marked with `[[memsafe("auto")]]`
@@ -448,7 +448,7 @@ _example.cpp:95:16: error: Return share type
 (Например, сейчас нельзя сделать вот так `[[memsafe("unsafe")]] return nullptr;` для отключения проверки одного конкретного оператора. 
 Для этого нужна более новая версия clang с реализацией [Pull requests #110334](https://github.com/llvm/llvm-project/pull/110334))
 
-В настоящий момент (для целей демонстрации работоспособности концепции) в плагине реализованы следующие проверки лексики:
+### В настоящий момент (для целей демонстрации работоспособности концепции) в плагине реализованы следующие проверки лексики:
 - Запрет копирования ссылочных и защищенных переменных в рамках одного уровня (отмеченных `[[memsafe("shared")]]`)
 - Запрет обмена значениями между двумя ссылочными переменными разных уровней (отмеченных `[[memsafe("shared")]]`)
 - Запрет создания статических захваченных переменных отмеченных `[[memsafe("auto")]]`
