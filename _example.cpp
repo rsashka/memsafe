@@ -1,9 +1,43 @@
+#include <vector>
+#include <algorithm>
 #include "memsafe.h"
-
 
 using namespace memsafe;
 
 namespace ns {
+
+    MEMSAFE_LINE(100);
+
+    void iter_test(int arg) {
+        // memsafe_clang.so
+        // -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -Xclang -plugin-arg-memsafe -Xclang fixit=memsafe
+
+        std::vector<int> vect{1, 2, 3, 4};
+        {
+            auto beg = vect.begin();
+            std::vector<int>::const_iterator beg_const = vect.cbegin();
+            //            const auto end_const(vect.rend());
+            auto refff = &vect;
+
+            /* MEMSAFE_UNSAFE */
+            {
+                vect = {};
+                vect.clear();
+                std::sort(beg, vect.end());
+                const std::vector<int> vect_const;
+            }
+        }
+        {
+
+            auto b = LazyCaller<decltype(vect), decltype(std::declval<decltype(vect)>().begin())>(vect, &decltype(vect)::begin);
+            auto e = LAZYCALL(vect, end);
+            {
+                vect = {};
+                vect.clear();
+                std::sort(*b, *e);
+            }
+        }
+    }
 
     namespace MEMSAFE_ATTR("unsafe") {
 
@@ -13,7 +47,7 @@ namespace ns {
         memsafe::VarShared<int> var_unsafe3(3);
 
     }
-    
+
     MEMSAFE_LINE(2000);
     memsafe::VarValue<int> var_value(1);
     memsafe::VarValue<int> var_value2(2);

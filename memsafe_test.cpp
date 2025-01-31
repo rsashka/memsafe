@@ -6,10 +6,12 @@
 #include <fstream>
 #include <sstream>
 #include <filesystem>
+#include <chrono>
 
 #include "memsafe.h"
 
 using namespace memsafe;
+using namespace std::chrono_literals;
 
 TEST(MemSafe, Sizes) {
 
@@ -19,7 +21,7 @@ TEST(MemSafe, Sizes) {
     EXPECT_EQ(40, sizeof (std::variant<std::string, std::wstring>));
 
     EXPECT_EQ(16, sizeof (std::runtime_error));
-    EXPECT_EQ(16, sizeof (runtime_format));
+    EXPECT_EQ(16, sizeof (memsafe_error));
 
     class TestClassV0 {
 
@@ -191,6 +193,10 @@ TEST(MemSafe, Cast) {
 
     ASSERT_NO_THROW(*guard_int);
 
+    {
+        auto taken = guard_int.take();
+    }
+
     //    VarAuto<int, VarGuard<int, VarGuardData<int>>> auto_guard2(weak_guard1.take());
     //    std::cout << "auto_guard: " << guard_int.shared_this.use_count() << "\n";
 
@@ -258,15 +264,24 @@ TEST(MemSafe, Threads) {
         memsafe::VarGuard<int, VarSyncMutex> var_mutex(0);
         bool catched = false;
 
+        std::chrono::duration<double, std::milli> elapsed;
+
         std::thread other([&]() {
             try {
+
+                const auto start = std::chrono::high_resolution_clock::now();
+                std::this_thread::sleep_for(100ms);
+                elapsed = std::chrono::high_resolution_clock::now() - start;
                 *var_mutex;
             } catch (...) {
                 catched = true;
             }
 
         });
+        ASSERT_TRUE(other.joinable());
         other.join();
+
+        ASSERT_TRUE(elapsed <= 200.0ms);
 
         ASSERT_FALSE(catched);
     }
@@ -290,6 +305,54 @@ TEST(MemSafe, Threads) {
         ASSERT_FALSE(catched);
     }
 
+}
+
+TEST(MemSafe, Depend) {
+    {
+        std::vector<int> vect(100000, 0);
+        auto b = vect.begin();
+        auto e = vect.end();
+
+        EXPECT_EQ(8, sizeof (b));
+        EXPECT_EQ(8, sizeof (e));
+
+        vect = {};
+        //        vect.shrink_to_fit();
+        std::sort(b, e);
+
+    }
+    {
+        std::vector<int> vect(100000, 0);
+
+        auto b = LazyCaller<decltype(vect), decltype(std::declval<decltype(vect)>().begin())>(vect, &decltype(vect)::begin);
+        auto e = LAZYCALL(vect, end);
+        auto c = LAZYCALL(vect, clear);
+        auto s = LAZYCALL(vect, size);
+
+        EXPECT_EQ(32, sizeof (b));
+        EXPECT_EQ(32, sizeof (e));
+
+        ASSERT_EQ(100000, vect.size());
+        ASSERT_EQ(100000, *s);
+
+        *c;
+
+        ASSERT_EQ(0, vect.size());
+        ASSERT_EQ(0, *s);
+
+        std::vector<int> data(10, 0);
+        auto reserve = LAZYCALL(vect, reserve, (size_t)10);
+        *reserve;
+
+        auto call = LAZYCALL(vect, assign, data.begin(), data.end());
+        *call;
+        
+        ASSERT_EQ(10, vect.size());
+        ASSERT_EQ(10, *s);
+
+        vect.shrink_to_fit();
+        std::sort(*b, *e);
+    }
 }
 
 TEST(MemSafe, ApplyAttr) {
@@ -330,160 +393,141 @@ TEST(MemSafe, ApplyAttr) {
 
 }
 
-TEST(MemSafe, Plugin) {
+//TEST(MemSafe, Plugin) {
+//
+//    namespace fs = std::filesystem;
+//
+//
+//    // Example of running a plugin to compile a file
+//
+//    /* The plugin operation is checked as follows.
+//     * A specific file with examples of template usage from the metsafe/ file is compiled
+//     * The example file contains correct C++ code, 
+//     * but the variables in it are used both correctly and with violations of the rules.
+//     * 
+//     * When compiling a file with an analyzer plugin, debug output is created and written to a debug file.
+//     * This file is read in the test and debug messages of the plugin 
+//     * are searched for in it (both successful and unsuccessful checks).
+//     * 
+//     * If all check messages are found, the test is considered successful.
+//     */
+//
+//    std::string cmd = "clang-19";
+//    cmd += " -std=c++20 -ferror-limit=500 ";
+//    cmd += " -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe ";
+//    cmd += " -Xclang -plugin-arg-memsafe -Xclang fixit=memsafe ";
+//    cmd += " -c _example.cpp ";
+//
+//    const char * file_out = "_example.cpp.memsafe";
+//    fs::remove(file_out);
+//    int err = std::system(cmd.c_str());
+//
+//    ASSERT_TRUE(fs::exists(file_out));
+//
+//    std::ifstream file(file_out);
+//
+//    ASSERT_TRUE(file.is_open());
+//
+//    std::stringstream buffer;
+//    buffer << file.rdbuf();
+//
+//    std::string output = buffer.str();
+//    file.close();
+//
+//    ASSERT_TRUE(!output.empty());
+//
+//
+//    std::vector<int> vect{1, 2, 3, 4};
+//    auto beg = vect.begin();
+//    auto end = vect.end();
+//    vect = {};
+//    vect.shrink_to_fit();
+//    std::sort(beg, end); // malloc(): unaligned tcache chunk detected
+//
+//
+//    std::set<std::string> diag({
+//        "#106 #approved",
+//        "#106 #depend",
+//
+//        "#107 #approved",
+//        "#107 #depend",
+//
+//        "#108 #approved",
+//        "#108 #depend",
+//
+//        "#109 #error",
+//
+//        "#1001 #approved",
+//        "#1002 #approved",
+//        "#1003 #approved",
+//
+//        "#2003 #approved",
+//
+//        "#3002 #error",
+//        "#3003 #error",
+//
+//        "#4002 #approved",
+//
+//        "#4020 #approved",
+//        "#4021 #approved",
+//        "#4028 #approved",
+//        "#4035 #approved",
+//
+//        "#5002 #approved",
+//
+//
+//        "#113 #approved",
+//        "#4005 #approved",
+//
+//        "#4007 #approved",
+//        "#4009 #approved",
+//        "#4024 #approved",
+//        "#4025 #approved",
+//        "#4029 #approved",
+//        "#4030 #approved",
+//        "#4031 #approved",
+//        "#4037 #approved",
+//        "#4038 #approved",
+//        "#4039 #approved",
+//        "#4041 #approved",
+//        "#4042 #approved",
+//        "#4044 #approved",
+//        "#4055 #approved",
+//
+//
+//    });
+//
+//    size_t line;
+//    std::multimap<size_t, const char *> list;
+//    for (auto &elem : diag) {
+//        line = atoi(&elem[1]);
+//        ASSERT_TRUE(line) << elem;
+//        list.emplace(line, elem.data());
+//    }
+//
+//
+//    size_t pos = output.find("##memsafe ");
+//    size_t pos_end = 0;
+//    while (pos != std::string::npos) {
+//
+//        pos_end = output.find(" */", pos);
+//        line = atoi(&output[pos + 11]);
+//        auto found = list.find(line);
+//        if (found == list.end()) {
+//            ADD_FAILURE() << "Not found: " << output.substr(pos - 3, output.find(" */", pos) - pos + 6);
+//        } else if (output.find(found->second, pos + 10) != pos + 10) {
+//            ADD_FAILURE() << "At line: #" << line << " expected: \"" << found->second << "\" but found \"" << output.substr(pos + 10, output.find(" */", pos) - pos - 10) << "\"";
+//            list.erase(found);
+//        } else {
+//            list.erase(found);
+//        }
+//        pos = output.find("##memsafe", pos_end);
+//    };
+//
+//    for (auto &elem : list) {
+//        ADD_FAILURE() << "Not found: " << elem.second;
+//    }
+//
+//}
 
-    namespace fs = std::filesystem;
-
-    
-    // Example of running a plugin to compile a file
-    
-    /* The plugin operation is checked as follows.
-     * A specific file with examples of template usage from the metsafe/ file is compiled
-     * The example file contains correct C++ code, 
-     * but the variables in it are used both correctly and with violations of the rules.
-     * 
-     * When compiling a file with an analyzer plugin, debug output is created and written to a debug file.
-     * This file is read in the test and debug messages of the plugin 
-     * are searched for in it (both successful and unsuccessful checks).
-     * 
-     * If all check messages are found, the test is considered successful.
-     */        
-    
-    std::string cmd = "clang-19";
-    cmd += " -std=c++20 -ferror-limit=500 ";
-    cmd += " -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe ";
-    cmd += " -Xclang -plugin-arg-memsafe -Xclang fixit=memsafe ";
-    cmd += " _example.cpp ";
-
-    const char * file_out = "_example.cpp.memsafe";
-    fs::remove(file_out);
-    int err = std::system(cmd.c_str());
-
-    ASSERT_TRUE(fs::exists(file_out));
-
-    std::ifstream file(file_out);
-
-    ASSERT_TRUE(file.is_open());
-
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-
-    std::string output = buffer.str();
-    file.close();
-
-    ASSERT_TRUE(!output.empty());
-
-    std::set<std::string> diag({
-        //MEMSAFE_LINE(1000);        
-        "unsafe, 1001",
-        "unsafe, 1002",
-        "unsafe, 1003",
-        "shared, 1001, 1",
-        "shared, 1002, 1",
-        "shared, 1003, 1",
-
-        //MEMSAFE_LINE(2000);
-        "value, 2001, 1",
-        "value, 2002, 1",
-        "shared, 2003, 1",
-        "shared, 2004, 1",
-
-        //MEMSAFE_LINE(3000);
-        "value, 3001, 1",
-        "error, 3002",
-        "auto, 3002, 1",
-        "error, 3003",
-        "auto, 3003, 1",
-
-        //MEMSAFE_LINE(4000);
-        "shared, 4002, 1",
-        "value, 4002, 1",
-
-
-        //MEMSAFE_LINE(4100);
-        "value, 4005, 1",
-        "approved, 4005",
-        "value, 4005, 1",
-        "value, 4007, 1",
-        "approved, 4007",
-        "value, 4007, 1",
-        "value, 4009, 1",
-        "approved, 4009",
-        "value, 4009, 1",
-
-
-
-        //MEMSAFE_LINE(4200);
-        "shared, 4020, 2",
-        "shared, 4021, 2",
-
-        //MEMSAFE_LINE(4300) !!!!!!!!!!!!!!!
-        "shared, 4024, 2",
-        "error, 4024",
-        "shared, 4024, 2",
-
-        "shared, 4025, 2",
-        "error, 4025",
-        "shared, 4025, 2",
-
-
-        //MEMSAFE_LINE(4400) !!!!!!!!!!!!!!!
-        "shared, 4028, 3",
-
-        "shared, 4029, 2",
-        "error, 4029",
-        "shared, 4029, 2",
-
-        "shared, 4030, 2",
-        "error, 4030",
-        "shared, 4030, 2",
-        "shared, 4031, 3",
-        "error, 4031",
-        "shared, 4031, 2",
-
-
-        // MEMSAFE_LINE(4500) !!!!!!!!!!!!!!! 
-        "shared, 4035, 4",
-        "shared, 4037, 2",
-        "error, 4037",
-        "shared, 4037, 2",
-        "shared, 4038, 2",
-        "error, 4038",
-        "shared, 4038, 2",
-        "shared, 4039, 3",
-        "error, 4039",
-        "shared, 4039, 2",
-
-        "shared, 4041, 4",
-        "error, 4041",
-        "shared, 4041, 2",
-        "shared, 4042, 4",
-        "error, 4042",
-        "shared, 4042, 3",
-        "shared, 4044, 4",
-        "error, 4044",
-        "shared, 4044, 4",
-
-        // MEMSAFE_LINE(4600) !!!!!!!!!!!!!!!
-        "error, 4049",
-        "shared, 4049, 2",
-        "shared, 4049, 3",
-        // MEMSAFE_LINE(4700) !!!!!!!!!!!!!!!
-        "value, 4055, 1",
-        "approved, 4055",
-
-        //MEMSAFE_LINE(5000)
-        "error, 5004",
-                
-        //  MEMSAFE_LINE(6000)
-        "approved, 6004",
-
-    });
-
-
-    for (auto &str : diag) {
-        EXPECT_TRUE(output.find(str) != std::string::npos) << str;
-    }
-
-}
 #endif

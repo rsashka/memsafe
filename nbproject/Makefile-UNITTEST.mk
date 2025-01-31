@@ -35,6 +35,7 @@ OBJECTDIR=${CND_BUILDDIR}/${CND_CONF}/${CND_PLATFORM}
 
 # Object Files
 OBJECTFILES= \
+	${OBJECTDIR}/_example.o \
 	${OBJECTDIR}/memsafe_test.o
 
 
@@ -62,9 +63,14 @@ ${CND_DISTDIR}/${CND_CONF}/${CND_PLATFORM}/memsafe: ${OBJECTFILES}
 	${MKDIR} -p ${CND_DISTDIR}/${CND_CONF}/${CND_PLATFORM}
 	${LINK.cc} -o ${CND_DISTDIR}/${CND_CONF}/${CND_PLATFORM}/memsafe ${OBJECTFILES} ${LDLIBSOPTIONS}
 
+${OBJECTDIR}/_example.o: _example.cpp memsafe_clang.so nbproject/Makefile-${CND_CONF}.mk
+	${MKDIR} -p ${OBJECTDIR}
+	${RM} "$@.d"
+	$(COMPILE.cc) -g -DBUILD_UNITTEST -I. -std=c++20 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -Xclang -plugin-arg-memsafe -Xclang fixit=memsafe -MMD -MP -MF "$@.d" -o ${OBJECTDIR}/_example.o _example.cpp
+
 memsafe_clang.so: memsafe_clang.cpp nbproject/Makefile-${CND_CONF}.mk
 	@echo "\033[1;46;34m"Building a plugin memsafe_clang.so"\033[0m"
-	clang-19 -fPIC -shared -o memsafe_clang.so memsafe_clang.cpp `llvm-config-19 --cxxflags --ldflags --system-libs --libs all`
+	clang-19 -fPIC -shared -o memsafe_clang.so memsafe_clang.cpp `llvm-config-19 --cppflags --ldflags --system-libs --libs all`
 
 ${OBJECTDIR}/memsafe_test.o: memsafe_test.cpp memsafe_clang.so nbproject/Makefile-${CND_CONF}.mk
 	${MKDIR} -p ${OBJECTDIR}

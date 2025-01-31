@@ -64,9 +64,9 @@
           </linkerLibItems>
         </linkerTool>
       </compileType>
-      <item path="_example.cpp" ex="true" tool="1" flavor2="0">
+      <item path="_example.cpp" ex="false" tool="1" flavor2="0">
         <ccTool>
-          <commandLine>-std=c++20 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe</commandLine>
+          <commandLine>-std=c++20 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -Xclang -plugin-arg-memsafe -Xclang fixit=memsafe</commandLine>
           <additionalDep>memsafe_clang.so</additionalDep>
         </ccTool>
       </item>
@@ -76,7 +76,7 @@
       </item>
       <item path="memsafe_clang.cpp" ex="false" tool="3" flavor2="0">
         <customTool>
-          <customToolCommandline>clang-19 -fPIC -shared -o memsafe_clang.so memsafe_clang.cpp `llvm-config-19 --cxxflags --ldflags --system-libs --libs all`</customToolCommandline>
+          <customToolCommandline>clang-19 -fPIC -shared -o memsafe_clang.so memsafe_clang.cpp `llvm-config-19 --cppflags --ldflags --system-libs --libs all`</customToolCommandline>
           <customToolDescription>"\033[1;46;34m"Building a plugin memsafe_clang.so"\033[0m"</customToolDescription>
           <customToolOutputs>memsafe_clang.so</customToolOutputs>
         </customTool>
