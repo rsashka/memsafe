@@ -689,6 +689,16 @@ namespace memsafe { // Begin define memory safety classes
 
 #ifndef DOXYGEN_SHOULD_SKIP_THIS
 
+    class LazyCallerInterface {
+    public:
+        auto operator*();
+        auto operator*() const;
+    };
+
+    //std::tuple_element_t<N, std::tuple<InputPortTypes...>>
+
+    //    template <typename T, typename R, typename ... Args> class LazyCaller;
+
     template<int...> struct index_tuple {
     };
 
@@ -769,9 +779,9 @@ namespace memsafe { // Begin define memory safety classes
      * @def LAZYCALL(variable, method, ...)
      * 
      * Macro for creating a deferred call to a class method. 
-     * Used to safely work with data types listed using the macro
+     * Used to safely work with data types listed using the macro.
      * 
-     * @ref MEMSAFE_INVALIDATE
+     * Method arguments cannot be of types from the list @ref MEMSAFE_INVALIDATE
      * 
      * Someday, using static reflection, the same thing can be done without macros.
      * 
@@ -787,7 +797,7 @@ namespace memsafe { // Begin define memory safety classes
      * @ref LAZYCALL()
      */
     template <typename T, typename R, typename ... Args>
-    class LazyCaller {
+    class LazyCaller : public LazyCallerInterface {
         T &object;
 
         union {
@@ -832,6 +842,12 @@ namespace memsafe { // Begin define memory safety classes
 
     MEMSAFE_INVALIDATE("__gnu_cxx::__normal_iterator");
     MEMSAFE_INVALIDATE("std::reverse_iterator");
+
+    /*
+     * For a basic_string_view str, pointers, iterators, and references to elements of str are invalidated 
+     * when an operation invalidates a pointer in the range [str.data(), str.data() + str.size()).
+     */
+    MEMSAFE_INVALIDATE("std::basic_string_view");
 
 
     // End define memory safety classes
