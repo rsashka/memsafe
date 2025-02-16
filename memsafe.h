@@ -32,10 +32,41 @@
  */
 
 
+#define MEMSAFE_KEYWORD_ATTRIBUTE memsafe
+#define MEMSAFE_KEYWORD_PROFILE "profile"
+#define MEMSAFE_KEYWORD_STATUS "status"
+#define MEMSAFE_KEYWORD_UNSAFE "unsafe"
+#define MEMSAFE_KEYWORD_DUMP "dump"
+#define MEMSAFE_KEYWORD_LINE "line"
+
+#define MEMSAFE_KEYWORD_ENABLE "enable"
+#define MEMSAFE_KEYWORD_DISABLE "disable"
+#define MEMSAFE_KEYWORD_PUSH "push"
+#define MEMSAFE_KEYWORD_POP "pop"
+
+#define MEMSAFE_KEYWORD_SHARED "shared"
+#define MEMSAFE_KEYWORD_AUTO "auto"
+
+#define MEMSAFE_KEYWORD_ERROR "error"
+#define MEMSAFE_KEYWORD_WARNING "warning"
+#define MEMSAFE_KEYWORD_NOTE "note"
+#define MEMSAFE_KEYWORD_REMARK "remark"
+#define MEMSAFE_KEYWORD_IGNORED "ignored"
+
+#define MEMSAFE_KEYWORD_APPROVED "approved"
+
+
+#define MEMSAFE_KEYWORD_NONCONST_ARG "nonconst-arg"
+#define MEMSAFE_KEYWORD_NONCONST_METHOD "nonconst-method"
+
+#define MEMSAFE_KEYWORD_INVALIDATE_TYPE  "invalidate-type"
+#define MEMSAFE_KEYWORD_INVALIDATE_FUNC  "invalidate-func"
+
+
 #if defined __has_attribute
-#if __has_attribute(memsafe)
-#define MEMSAFE_ATTR(...) [[memsafe(__VA_ARGS__)]]
-#define MEMSAFE_LINE(number) namespace MEMSAFE_ATTR("line", #number) {}
+#if __has_attribute( MEMSAFE_KEYWORD_ATTRIBUTE )
+#define MEMSAFE_ATTR(...) [[ MEMSAFE_KEYWORD_ATTRIBUTE (__VA_ARGS__)]]
+#define MEMSAFE_LINE(number) namespace MEMSAFE_ATTR( MEMSAFE_KEYWORD_LINE, #number) {}
 #endif
 #endif
 
@@ -46,17 +77,24 @@
 #define MEMSAFE_DISABLE
 #endif
 
-#define MEMSAFE_ERR(name) MEMSAFE_ATTR("error", name)
-#define MEMSAFE_WARN(name) MEMSAFE_ATTR("warning", name)
 
-#define MEMSAFE_PROFILE(file) MEMSAFE_ATTR("profile", file)
-#define MEMSAFE_STATUS(status) MEMSAFE_ATTR("status", status)
-#define MEMSAFE_UNSAFE MEMSAFE_ATTR("status", "unsafe")
+#define MEMSAFE_ERR(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_ERROR, name)
+#define MEMSAFE_WARN(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_WARNING, name)
 
-#define MEMSAFE_SHARED(name) MEMSAFE_ATTR("shared", name)
-#define MEMSAFE_AUTO(name) MEMSAFE_ATTR("auto", name)
-#define MEMSAFE_INVALIDATE(name) MEMSAFE_ATTR("invalidate", name)
+#define MEMSAFE_PROFILE(file) MEMSAFE_ATTR(MEMSAFE_KEYWORD_PROFILE, file)
+#define MEMSAFE_STATUS(status) MEMSAFE_ATTR(MEMSAFE_KEYWORD_STATUS, status)
+#define MEMSAFE_UNSAFE MEMSAFE_ATTR(MEMSAFE_KEYWORD_STATUS, MEMSAFE_KEYWORD_UNSAFE)
 
+#define MEMSAFE_SHARED(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_SHARED, name)
+#define MEMSAFE_AUTO(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_AUTO, name)
+
+#define MEMSAFE_NONCONST_ARG(status) MEMSAFE_ATTR(MEMSAFE_KEYWORD_NONCONST_ARG, status)
+#define MEMSAFE_NONCONST_METHOD(status) MEMSAFE_ATTR(MEMSAFE_KEYWORD_NONCONST_METHOD, status)
+
+#define MEMSAFE_INV_TYPE(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_INVALIDATE_TYPE, name)
+#define MEMSAFE_INV_FUNC(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_INVALIDATE_FUNC, name)
+
+#define MEMSAFE_DUMP(filter) MEMSAFE_ATTR(MEMSAFE_KEYWORD_DUMP, filter) void memsafe_dump();
 
 /**
  * @def MEMSAFE_ATTR(...)
@@ -82,6 +120,19 @@
  * 
  */
 
+/**
+ * @def MEMSAFE_DUMP(...)
+ * 
+ * Enables or disables the output of expressions from the source file as AST nodes.
+ * Expression filter is planned (not implemented yet).
+ * Control over AST dump output is implemented as a set of user attributes in the stub function's forward declaration
+ * 
+ * @todo clang-20  error: 'memsafe' attribute annot be applied to a statement
+ * To apply custom attributes to expressions, you need to update clang, 
+ * as the current release version (19) 
+ * does not have this functionality (handleStmtAttribute)
+ * 
+ */
 
 /**
  * @def MEMSAFE_DISABLE
@@ -126,9 +177,35 @@
  */
 
 /**
- * @def MEMSAFE_INVALIDATE("unsafe data type")
+ * @def MEMSAFE_INV_TYPE("unsafe data type")
  * 
  * An unsafe data type that can be corrupted if data in the underlying object is modified.
+ * i.e. __gnu_cxx::__normal_iterator, std::reverse_iterator, std::basic_string_view etc.
+ */
+
+
+/**
+ * @def MEMSAFE_NONCONST_METHOD( level )
+ * 
+ * Default behavior when calling a method of a class that has both a const and non-const variant of the underlying object
+ * 
+ * @arg level - one of the possible meanings: "error", "warning", "note", "remark" or "ignored"
+ */
+
+/**
+ * @def MEMSAFE_NONCONST_ARG( level )
+ * 
+ * Default behavior when passing a underlying object with a given object as a non-const argument to a function
+ * 
+ * @arg level - one of the possible meanings: "error", "warning", "note", "remark" or "ignored"
+ */
+
+/**
+ * @def MEMSAFE_INV_FUNC("unsafe function name")
+ * The name of a function that, when passed as an argument to a base object, 
+ * always causes previously obtained references and iterators to be invalidated,
+ * regardless of the default settings @ref MEMSAFE_NONCONST_ARG
+ * such as std::swap, std::move  etc.
  */
 
 
@@ -758,6 +835,29 @@ namespace memsafe { // Begin define memory safety classes
     static_assert(NARGS(A, B, C, D, E, F, G, X, Y) == 9);
 
 
+    //    //decltype(std::declval<decltype(variable)>().method(__VA_ARGS__)) __VA_OPT__(,) DECLTYPE(__VA_ARGS__) 
+    //
+    //    template<typename T>
+    //    struct arg_helper {
+    //
+    //        static auto type_arg(T arg) {
+    //            return arg;
+    //        }
+    //
+    //        static auto type_call(T arg) {
+    //            if constexpr (std::is_class_v<T> && std::is_base_of_v<LazyCallerInterface, T>) {
+    //                return arg;
+    //            } else {
+    //                return arg;
+    //            }
+    //        }
+    //    };
+    //
+    //#define DECLTYPE_EXPAND_TYPE(arg) decltype(arg_helper<decltype(arg)>::type_call(arg))
+    //    //    std::conditional<(std::is_class_v<decltype(arg)> && std::is_base_of_v<LazyCallerInterface, decltype(arg)>), decltype(*arg), decltype(arg)>::type
+    //    //decltype(arg)
+    //    //std::conditional<!(std::is_class_v<decltype(arg)> && std::is_base_of_v<LazyCallerInterface, decltype(arg)>), decltype(arg), decltype(std::declval<decltype(arg)>().operator*())>::type
+
 #define DECLTYPE_EXPAND_0()
 #define DECLTYPE_EXPAND_1(arg1) decltype(arg1)
 #define DECLTYPE_EXPAND_2(arg1, arg2)  decltype(arg1), decltype(arg2)
@@ -773,6 +873,24 @@ namespace memsafe { // Begin define memory safety classes
 #define DECLTYPE_EXPAND(count, ...) DECLTYPE_EXPAND_HELPER(count, __VA_ARGS__)
 #define DECLTYPE(...) DECLTYPE_EXPAND(NARGS(__VA_ARGS__) __VA_OPT__(,) __VA_ARGS__)
 
+    //
+    //#define DECLTYPE_ARG_TYPE(arg) decltype(arg_helper<decltype(arg)>::type_arg(arg))
+    //
+    //#define DECLTYPE_ARG_0()
+    //#define DECLTYPE_ARG_1(arg1) DECLTYPE_ARG_TYPE(arg1)
+    //#define DECLTYPE_ARG_2(arg1, arg2)  DECLTYPE_ARG_TYPE(arg1), DECLTYPE_ARG_TYPE(arg2)
+    //#define DECLTYPE_ARG_3(arg1, arg2, arg3) DECLTYPE_ARG_TYPE(arg1), DECLTYPE_ARG_TYPE(arg2), DECLTYPE_ARG_TYPE(arg3)
+    //#define DECLTYPE_ARG_4(arg1, arg2, arg3, arg4) DECLTYPE_ARG_TYPE(arg1), DECLTYPE_ARG_TYPE(arg2), DECLTYPE_ARG_TYPE(arg3), DECLTYPE_ARG_TYPE(arg4)
+    //#define DECLTYPE_ARG_5(arg1, arg2, arg3, arg4, arg5) DECLTYPE_ARG_TYPE(arg1), DECLTYPE_ARG_TYPE(arg2), DECLTYPE_ARG_TYPE(arg3), DECLTYPE_ARG_TYPE(arg4), DECLTYPE_ARG_TYPE(arg5)
+    //#define DECLTYPE_ARG_6(arg1, arg2, arg3, arg4, arg5, arg6) DECLTYPE_ARG_TYPE(arg1), DECLTYPE_ARG_TYPE(arg2), DECLTYPE_ARG_TYPE(arg3), DECLTYPE_ARG_TYPE(arg4), DECLTYPE_ARG_TYPE(arg5), DECLTYPE_ARG_TYPE(arg6)
+    //#define DECLTYPE_ARG_7(arg1, arg2, arg3, arg4, arg5, arg6, arg7) DECLTYPE_ARG_TYPE(arg1), DECLTYPE_ARG_TYPE(arg2), DECLTYPE_ARG_TYPE(arg3), DECLTYPE_ARG_TYPE(arg4), DECLTYPE_ARG_TYPE(arg5), DECLTYPE_ARG_TYPE(arg6), DECLTYPE_ARG_TYPE(arg7)
+    //#define DECLTYPE_ARG_8(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8) DECLTYPE_ARG_TYPE(arg1), DECLTYPE_ARG_TYPE(arg2), DECLTYPE_ARG_TYPE(arg3), DECLTYPE_ARG_TYPE(arg4), DECLTYPE_ARG_TYPE(arg5), DECLTYPE_ARG_TYPE(arg6), DECLTYPE_ARG_TYPE(arg7), DECLTYPE_ARG_TYPE(arg8)
+    //#define DECLTYPE_ARG_9(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9) DECLTYPE_ARG_TYPE(arg1), DECLTYPE_ARG_TYPE(arg2), DECLTYPE_ARG_TYPE(arg3), DECLTYPE_ARG_TYPE(arg4), DECLTYPE_ARG_TYPE(arg5), DECLTYPE_ARG_TYPE(arg6), DECLTYPE_ARG_TYPE(arg7), DECLTYPE_ARG_TYPE(arg8), DECLTYPE_ARG_TYPE(arg9)
+    //
+    //#define DECLTYPE_ARG_HELPER(count, ...) DECLTYPE_ARG_ ## count (__VA_ARGS__)
+    //#define DECLTYPE_ARG(count, ...) DECLTYPE_ARG_HELPER(count, __VA_ARGS__)
+    //#define DECLTYPE_ARGS(...) DECLTYPE_ARG(NARGS(__VA_ARGS__) __VA_OPT__(,) __VA_ARGS__)
+    //
 #endif
 
     /**
@@ -825,6 +943,47 @@ namespace memsafe { // Begin define memory safety classes
     };
 
 
+    //    inline std::vector<int> vect;
+    //    inline auto check = LAZYCALL(vect, clear);
+    //    inline auto reserve = LAZYCALL(vect, reserve, 10UL);
+    //
+    //    inline std::vector<int> data(1, 1);
+    //    inline auto db = LAZYCALL(data, begin);
+    //    inline auto de = LAZYCALL(data, end);
+    //    inline std::vector<int> test(*db, *de);
+    //    //    inline auto call_test = LAZYCALL(vect, assign, db, de);
+    //
+    //
+    //    static_assert(std::is_same<decltype(10), decltype(0)>::value);
+    //    static_assert(std::is_same<std::vector<int>, std::vector<int>>::value);
+    //    static_assert(std::is_same<std::vector<int>::iterator, decltype(*db)>::value);
+    //
+    //    static_assert(std::is_base_of_v<LazyCallerInterface, decltype(db)>);
+    //
+    //    //    #define DECLTYPE_EXPAND_TYPE(arg)  decltype(arg)
+    //    //std::conditional<!(std::is_class_v<decltype(arg)> && std::is_base_of_v<LazyCallerInterface, decltype(arg)>), decltype(arg), decltype(std::declval<decltype(arg)>().operator*())>::type
+    //
+    //    static_assert(std::is_same<std::vector<int>::iterator, std::conditional<(std::is_class_v<decltype(db)> && std::is_base_of_v<LazyCallerInterface, decltype(db)>), decltype(*db), decltype(10)>::type >::value);
+    //    static_assert(std::is_same<int, std::conditional<(std::is_class_v<decltype(10)> && std::is_base_of_v<LazyCallerInterface, decltype(10)>), decltype(*db), decltype(10)>::type >::value);
+    //
+    //    static_assert(std::is_same<decltype(arg_helper<decltype(10)>::type_call(10)), decltype(10)>::value);
+    //    //    static_assert(std::is_same<decltype(arg_helper<decltype(db)>::type_call(db)), decltype(*db)>::value);
+    //
+    //    static_assert(std::is_same<DECLTYPE_EXPAND_TYPE(10), decltype(10)>::value);
+    //    //    static_assert(std::is_same<DECLTYPE_EXPAND_TYPE(db), decltype(*db)>::value);
+    //
+    //    //    static_assert(std::is_same<decltype(arg_type<decltype(db)>::call_type(db)), decltype(db)>::value);
+    //
+    //    //    static_assert(std::is_same<decltype(10UL), std::conditional<!(std::is_class_v<decltype(10UL)> && std::is_base_of_v<LazyCallerInterface, decltype(10UL)>), decltype(10UL), decltype(*10UL)>::type >::value);
+    //
+    //    //    static_assert(std::is_base_of_v<LazyCallerInterface, decltype(db)>);
+    //
+    //
+    //    //    static_assert(std::is_same<decltype(std::vector<int>::clear), decltype(std::vector<int>::clear)>::value);
+    //    //    static_assert(std::is_same<decltype(LazyCaller<std::vector<int>, decltype(std::declval<std::vector<int>>().clear())>::operator *())), void>::value);
+    //
+    //
+    //
     /*
      * 
      * 
@@ -840,14 +999,20 @@ namespace memsafe { // Begin define memory safety classes
     MEMSAFE_SHARED("memsafe::VarShared");
     MEMSAFE_AUTO("memsafe::VarAuto");
 
-    MEMSAFE_INVALIDATE("__gnu_cxx::__normal_iterator");
-    MEMSAFE_INVALIDATE("std::reverse_iterator");
+    MEMSAFE_INV_TYPE("__gnu_cxx::__normal_iterator");
+    MEMSAFE_INV_TYPE("std::reverse_iterator");
 
     /*
      * For a basic_string_view str, pointers, iterators, and references to elements of str are invalidated 
      * when an operation invalidates a pointer in the range [str.data(), str.data() + str.size()).
      */
-    MEMSAFE_INVALIDATE("std::basic_string_view");
+    MEMSAFE_INV_TYPE("std::basic_string_view");
+
+    MEMSAFE_NONCONST_ARG("ignore");
+    MEMSAFE_NONCONST_METHOD("ignore");
+
+    MEMSAFE_INV_FUNC("std::swap");
+    MEMSAFE_INV_FUNC("std::move");
 
 
     // End define memory safety classes

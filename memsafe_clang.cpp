@@ -1,3 +1,5 @@
+#include "memsafe_plugin.h"
+
 #include "llvm/Support/raw_ostream.h"
 #include "clang/Basic/Diagnostic.h"
 
@@ -20,6 +22,14 @@
 
 #include "clang/Rewrite/Frontend/FixItRewriter.h"
 #include "clang/Lex/PreprocessorOptions.h"
+
+#pragma clang attribute push
+#pragma clang diagnostic ignored "-Wdeprecated-anon-enum-enum-conversion"
+#pragma clang diagnostic ignored "-Wdeprecated-this-capture"
+
+#include "clang/AST/ASTDumper.h"
+
+#pragma clang attribute pop
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -66,16 +76,16 @@ namespace {
             // GNU-style __attribute__(("memsafe")) and C++/C23-style [[memsafe]] and
             // [[::memsafe]] supported.
             static constexpr Spelling S[] = {
-                {ParsedAttr::AS_GNU, "memsafe"},
-                {ParsedAttr::AS_C23, "memsafe"},
-                {ParsedAttr::AS_CXX11, "memsafe"},
-                {ParsedAttr::AS_CXX11, "::memsafe"},
+                {ParsedAttr::AS_GNU, TO_STR(MEMSAFE_KEYWORD_ATTRIBUTE)},
+                {ParsedAttr::AS_C23, TO_STR(MEMSAFE_KEYWORD_ATTRIBUTE)},
+                {ParsedAttr::AS_CXX11, TO_STR(MEMSAFE_KEYWORD_ATTRIBUTE)},
+                {ParsedAttr::AS_CXX11, "::" TO_STR(MEMSAFE_KEYWORD_ATTRIBUTE)},
             };
             Spellings = S;
         }
 
         bool diagAppertainsToDecl(Sema &S, const ParsedAttr &Attr, const Decl *D) const override {
-            return isa<EmptyDecl>(D) || isa<NamespaceDecl>(D) || isa<CXXRecordDecl>(D);
+            return true; //isa<EmptyDecl>(D) || isa<NamespaceDecl>(D) || isa<CXXRecordDecl>(D) || isa<FunctionDecl>(D);
         }
 
         AttrHandling handleDeclAttribute(Sema &S, Decl *D, const ParsedAttr &Attr) const override {
@@ -84,7 +94,7 @@ namespace {
 
                 unsigned ID = S.getDiagnostics().getCustomDiagID(
                         DiagnosticsEngine::Error,
-                        "'memsafe' attribute accept only one argument");
+                        "'" TO_STR(MEMSAFE_KEYWORD_ATTRIBUTE) "' attribute accept only one argument");
                 S.Diag(Attr.getLoc(), ID);
                 return AttributeNotApplied;
             }
@@ -97,7 +107,7 @@ namespace {
                 StringLiteral *Literal = dyn_cast<StringLiteral>(Arg0->IgnoreParenCasts());
                 if (!Literal) {
                     unsigned ID = S.getDiagnostics().getCustomDiagID(
-                            DiagnosticsEngine::Error, "argument to the 'memsafe' "
+                            DiagnosticsEngine::Error, "argument to the '" TO_STR(MEMSAFE_KEYWORD_ATTRIBUTE) "' "
                             "attribute must be a string literal");
                     S.Diag(Attr.getLoc(), ID);
                     return AttributeNotApplied;
@@ -108,13 +118,13 @@ namespace {
                     ArgsBuf.push_back(Attr.getArgAsExpr(i));
                 }
 
-                D->addAttr(AnnotateAttr::Create(S.Context, "memsafe", ArgsBuf.data(),
+                D->addAttr(AnnotateAttr::Create(S.Context, TO_STR(MEMSAFE_KEYWORD_ATTRIBUTE), ArgsBuf.data(),
                         ArgsBuf.size(), Attr.getRange()));
             } else {
 
                 // Attach an annotate attribute to the Decl.
 
-                D->addAttr(AnnotateAttr::Create(S.Context, "memsafe", nullptr, 0,
+                D->addAttr(AnnotateAttr::Create(S.Context, TO_STR(MEMSAFE_KEYWORD_ATTRIBUTE), nullptr, 0,
                         Attr.getRange()));
             }
 
@@ -288,6 +298,8 @@ namespace {
 
         const FunctionDecl *func; // current function or null
 
+        std::vector<std::string> dump;
+
         ScopeLevel(const FunctionDecl *f = nullptr) : func(f) {
 
         }
@@ -303,38 +315,34 @@ namespace {
         // (i.e. namespace [[memsafa("define")]] ... )
 
         //        static inline const char * VALUE = "value";
-        static inline const char * SHARED = "shared";
-        static inline const char * AUTO = "auto";
-        static inline const char * INVAL = "invalidate";
+        static inline const char * SHARED = MEMSAFE_KEYWORD_SHARED;
+        static inline const char * AUTO = MEMSAFE_KEYWORD_AUTO;
+        static inline const char * INVAL_TYPE = MEMSAFE_KEYWORD_INVALIDATE_TYPE;
+        static inline const char * INVAL_FUNC = MEMSAFE_KEYWORD_INVALIDATE_FUNC;
 
+        static inline const char * NONCONST_ARG = MEMSAFE_KEYWORD_NONCONST_ARG;
+        static inline const char * NONCONST_METHOD = MEMSAFE_KEYWORD_NONCONST_METHOD;
 
-        static inline const std::set<std::string> attArgs{SHARED, AUTO, INVAL};
-
-        //        static inline const std::set<std::string> attrDef{defError.data(), defWarning.data(), defSafe.data(), defUnsafe.data()};
+        static inline const std::set<std::string> attArgs{SHARED, AUTO, INVAL_TYPE, INVAL_FUNC, NONCONST_ARG, NONCONST_METHOD};
 
         std::map<std::string, std::string> m_clsUse;
 
 
         // The first string arguments in the `memsafe` attribute for working and managing the plugin
-        static inline const char * PROFILE = "profile";
-        static inline const char * STATUS = "status";
-        static inline const char * ERROR = "error";
-        static inline const char * WARNING = "warning";
-        static inline const char * LINE = "line";
-        static inline const char * UNSAFE = "unsafe";
+        static inline const char * PROFILE = MEMSAFE_KEYWORD_PROFILE;
+        static inline const char * STATUS = MEMSAFE_KEYWORD_STATUS;
+        static inline const char * ERROR = MEMSAFE_KEYWORD_ERROR;
+        static inline const char * WARNING = MEMSAFE_KEYWORD_WARNING;
+        static inline const char * LINE = MEMSAFE_KEYWORD_LINE;
+        static inline const char * UNSAFE = MEMSAFE_KEYWORD_UNSAFE;
+        static inline const char * DUMP = MEMSAFE_KEYWORD_DUMP;
 
-        static inline const char * STATUS_ENABLE = "enable";
-        static inline const char * STATUS_DISABLE = "disable";
-        static inline const char * STATUS_PUSH = "push";
-        static inline const char * STATUS_POP = "pop";
+        static inline const char * STATUS_ENABLE = MEMSAFE_KEYWORD_ENABLE;
+        static inline const char * STATUS_DISABLE = MEMSAFE_KEYWORD_DISABLE;
+        static inline const char * STATUS_PUSH = MEMSAFE_KEYWORD_PUSH;
+        static inline const char * STATUS_POP = MEMSAFE_KEYWORD_POP;
 
-        //        static inline const char * MODE_ERROR = "error"; ///< Полная диагностика кода плагином с выдачей предупреждеенйи и ошибок
-        //        static inline const char * MODE_WARNING = "warning"; ///< Полная диагностика кода плагином, но в место ошибок выводятся предупреждения
-        //        static inline const char * MODE_DEBUG = "debug";
-        //        static inline const char * MODE_DUMP = "dump";
-
-
-        std::set<std::string> m_listFirstArg{PROFILE, UNSAFE, SHARED, AUTO, INVAL, WARNING, ERROR, STATUS, LINE};
+        std::set<std::string> m_listFirstArg{PROFILE, UNSAFE, SHARED, AUTO, INVAL_TYPE, INVAL_FUNC, WARNING, ERROR, STATUS, LINE, NONCONST_ARG, NONCONST_METHOD, DUMP};
         std::set<std::string> m_listStatus{STATUS_ENABLE, STATUS_DISABLE, STATUS_PUSH, STATUS_POP};
 
         std::set<std::string> m_listUnsafe;
@@ -356,7 +364,11 @@ namespace {
         /**
          * List of base iterator types that must be tracked for strict control of dependent pointers.         
          */
-        std::set<std::string> m_listIter;
+        std::set<std::string> m_list_inval_type;
+        /**
+         * List of base iterator types that must be tracked for strict control of dependent pointers.         
+         */
+        std::set<std::string> m_list_inval_func;
 
         std::set<std::string> m_listWarning;
         std::set<std::string> m_listError;
@@ -364,6 +376,9 @@ namespace {
 
         std::set<std::string> m_is_template;
         std::map<std::string, const CXXRecordDecl *> m_class_decl;
+
+        memsafe::StringMatcher m_dump_matcher;
+        SourceLocation m_dump_location;
 
         const CompilerInstance &m_CI;
 
@@ -390,7 +405,8 @@ namespace {
             llvm::outs() << "m_listWarning: " << makeHelperString(m_listWarning) << "\n";
             llvm::outs() << "m_listShared: " << makeHelperString(m_listShared) << "\n";
             llvm::outs() << "m_listAuto: " << makeHelperString(m_listAuto) << "\n";
-            llvm::outs() << "m_listIter: " << makeHelperString(m_listIter) << "\n";
+            llvm::outs() << "m_list_inval_type: " << makeHelperString(m_list_inval_type) << "\n";
+            llvm::outs() << "m_list_inval_func: " << makeHelperString(m_list_inval_func) << "\n";
             llvm::outs() << "m_varOther: " << makeHelperString(m_varOther) << "\n";
 
             //            llvm::outs() << "m_iter_depend: ";
@@ -438,7 +454,7 @@ namespace {
             if (first.empty() || second.empty()) {
                 if (first.compare(PROFILE) == 0) {
                     clear();
-                } else if (first.compare(UNSAFE) == 0) {
+                } else if (first.compare(UNSAFE) == 0 || first.compare(DUMP) == 0) {
                     // The second argument may be empty
                 } else {
                     result = "Two string literal arguments expected!";
@@ -499,8 +515,10 @@ namespace {
                     m_listShared.emplace(second.begin());
                 } else if (first.compare(AUTO) == 0) {
                     m_listAuto.emplace(second.begin());
-                } else if (first.compare(INVAL) == 0) {
-                    m_listIter.emplace(second.begin());
+                } else if (first.compare(INVAL_TYPE) == 0) {
+                    m_list_inval_type.emplace(second.begin());
+                } else if (first.compare(INVAL_FUNC) == 0) {
+                    m_list_inval_func.emplace(second.begin());
                 }
             }
             return result;
@@ -515,8 +533,8 @@ namespace {
                 return AUTO;
             } else if (m_listShared.find(type.begin()) != m_listShared.end()) {
                 return SHARED;
-            } else if (m_listIter.find(type.begin()) != m_listIter.end()) {
-                return INVAL;
+            } else if (m_list_inval_type.find(type.begin()) != m_list_inval_type.end()) {
+                return INVAL_TYPE;
             }
             return nullptr;
         }
@@ -609,41 +627,13 @@ namespace {
             message += (msg.empty() ? "" : " ");
             message += msg.begin();
 
-            //            if (level != VarInfo::NOLEVEL) {
-            //                message += " #";
-            //                message += std::to_string(level);
-            //            }
-            //
-            //            if (const FunctionDecl * const * func = std::get_if<const FunctionDecl*> (&parent)) {
-            //
-            //                message += " #\"";
-            //                message += (*func)->getReturnType().getAsString();
-            //                message += " ";
-            //                message += (*func)->getQualifiedNameAsString();
-            //                message += "(";
-            //                for (int i = 0; i < (*func)->getNumParams(); i++) {
-            //                    if ((*func)->getNumParams() > 1) {
-            //                        message += ", ";
-            //                    }
-            //                    message += (*func)->parameters()[i]->getOriginalType().getAsString();
-            //                    message += " ";
-            //                    message += (*func)->parameters()[i]->getQualifiedNameAsString();
-            //                }
-            //                message += ")\"";
-            //
-            //            } else if (const FieldDecl * const * field = std::get_if<const FieldDecl *> (&parent)) {
-            //                message += ", \"class ";
-            //                message += (*field)->getNameAsString();
-            //                message += "\"";
-            //            }
-
             message += " */ ";
 
             return message;
         }
 
         std::pair<std::string, std::string> parseAttr(AnnotateAttr *attr) {
-            if (!attr || attr->getAnnotation() != "memsafe" || attr->args_size() != 2) {
+            if (!attr || attr->getAnnotation() != TO_STR(MEMSAFE_KEYWORD_ATTRIBUTE) || attr->args_size() != 2) {
                 return pair_empty;
             }
 
@@ -910,9 +900,9 @@ next_parent:
 
                 auto data = m_scopes.back().lval.emplace(var_name, DeclInfo({var, found_type}));
 
-                if (INVAL == found_type) {
+                if (INVAL_TYPE == found_type) {
 
-                    FIXIT_DIAG(var->getLocation(), "Iterator found", "approved");
+                    FIXIT_DIAG(var->getLocation(), "Iterator found", MEMSAFE_KEYWORD_APPROVED);
 
                     if (const DeclRefExpr * dre = getInitializer(*var)) { //dyn_cast<DeclRefExpr>(calle->getImplicitObjectArgument()->IgnoreUnlessSpelledInSource())
 
@@ -968,10 +958,10 @@ next_parent:
 
         bool checkBlockerMethod(const std::string_view name, const DeclRefExpr & ref) {
             //            ref.IgnoreUnlessSpelledInSource()->dumpColor();
-//
-//            llvm::outs() << "checkBlockerMethod - getReferencedDeclOfCallee\n";
-//            ref.getReferencedDeclOfCallee()->dumpColor();
-//            return true;
+            //
+            //            llvm::outs() << "checkBlockerMethod - getReferencedDeclOfCallee\n";
+            //            ref.getReferencedDeclOfCallee()->dumpColor();
+            //            return true;
 
             clang::DynTypedNodeList parents = m_CI.getASTContext().getParents(ref);
 
@@ -1008,6 +998,87 @@ next_parent:
             return true;
         }
 
+        /*
+         * @ref MEMSAFE_DUMP
+         */
+        void checkDumpFilter(const Decl * decl) {
+            if (decl) {
+                auto attr_args = parseAttr(decl->getAttr<AnnotateAttr>());
+                if (attr_args != pair_empty) {
+                    if (attr_args.first.compare(DUMP) == 0) {
+                        if (attr_args.second.empty()) {
+                            m_dump_matcher.Clear();
+                        } else {
+                            //@todo Create Dump filter 
+                            llvm::outs() << "Dump filter '" << attr_args.second << "' not implemented!\n";
+                            m_dump_matcher.Create(attr_args.second, ';');
+                        }
+                        if (decl->getLocation().isMacroID()) {
+                            m_dump_location = m_CI.getSourceManager().getExpansionLoc(decl->getLocation());
+                        } else {
+                            m_dump_location = decl->getLocation();
+                        }
+                    }
+                }
+            }
+        }
+
+        bool skipDumpLocation(const SourceLocation &loc) {
+            int64_t line_no = 0;
+            SourceLocation test_loc = loc;
+            if (loc.isMacroID()) {
+                test_loc = m_CI.getSourceManager().getExpansionLoc(loc);
+            }
+            if (m_dump_location.isValid() &&
+                    m_CI.getSourceManager().getSpellingLineNumber(test_loc) == m_CI.getSourceManager().getSpellingLineNumber(m_dump_location)) {
+                //                llvm::outs() << "skip " << m_dump_location.printToString(m_CI.getSourceManager()) << "  " << test_loc.printToString(m_CI.getSourceManager()) << "\n";
+                return true;
+            }
+            m_dump_location = test_loc;
+            return false;
+        }
+
+        void printDumpIfEnabled(const Stmt * stmt) {
+            if (!stmt || !isEnabled() || m_dump_matcher.isEmpty() || skipDumpLocation(stmt->getBeginLoc())) {
+                return;
+            }
+
+            // Source location for IDE
+            llvm::outs() << stmt->getBeginLoc().printToString(m_CI.getSourceManager());
+            // Color highlighting
+            llvm::outs() << "  \033[1;46;34m";
+            // The string at the current position to expand the AST
+
+            PrintingPolicy Policy(m_CI.getASTContext().getPrintingPolicy());
+            Policy.SuppressScope = false;
+            Policy.AnonymousTagLocations = true;
+
+            //@todo Create Dump filter 
+            std::string output;
+            llvm::raw_string_ostream str(output);
+            stmt->printPretty(str, nullptr, Policy);
+
+            size_t pos = output.find("\n");
+            if (pos == std::string::npos) {
+                llvm::outs() << output;
+            } else {
+                llvm::outs() << output.substr(0, pos - 1);
+            }
+
+            // Close color highlighting
+            llvm::outs() << "\033[0m ";
+            llvm::outs() << " dump:\n";
+
+
+            // Ast tree for current line
+            const ASTContext &Ctx = m_CI.getASTContext();
+            ASTDumper P(llvm::outs(), Ctx, /*ShowColors=*/true);
+            P.Visit(stmt); //dyn_cast<Decl>(decl)
+        }
+
+
+
+
         //        Decl *Expr::getReferencedDeclOfCallee() {
         //            Expr *CEE = IgnoreParenImpCasts();
         //
@@ -1041,29 +1112,118 @@ next_parent:
         //            return nullptr;
         //        }
 
-        bool VisitCallExpr(const CallExpr *call) {
-            if (isEnabled()) {
-                llvm::outs() << "CallExpr: " << call->getDirectCallee()-> getQualifiedNameAsString() << "\n";
+        typedef std::variant<std::monostate, const CXXMemberCallExpr *, const CXXOperatorCallExpr *, CallExpr *> CallType;
+        std::vector<CallType> m_call_stack;
 
-                for (unsigned i = 0; i < call->getNumArgs(); i++) {
-                    //                    if (call->getArg(i)->getReferencedDeclOfCallee()) {
-                    //                        llvm::outs() << "getReferencedDeclOfCallee\n";
-                    //                        call->getArg(i)->getReferencedDeclOfCallee()->dumpColor();
-                    //                    } else {
-                    call->getArg(i)->dumpColor();
-                    //                    }
-                    //            llvm::outs() << call->dump()"call.getArg(...): ";
+        bool TraverseCallExpr(CallExpr * call) {
+            if (isEnabledStatus()) {
 
+                //CXXMemberCallExpr
+                //CXXOperatorCallExpr
+                //CUDAKernelCallExpr
+                //UserDefinedLiteral
+                // CallExpr: std::vector<int>::operator=  CXXMemberCallExpr: 0  CXXOperatorCallExpr: 1  CallExpr: 1
+                // CallExpr: std::vector<int>::shrink_to_fit  CXXMemberCallExpr: 1  CXXOperatorCallExpr: 0  CallExpr: 1
+                // CallExpr: std::vector<int>::cbegin  CXXMemberCallExpr: 1  CXXOperatorCallExpr: 0  CallExpr: 1
+                // CallExpr: std::sort  CXXMemberCallExpr: 0  CXXOperatorCallExpr: 0  CallExpr: 1
+
+                llvm::outs() << "TraverseCallExpr: " << call->getDirectCallee()-> getQualifiedNameAsString() << " " << m_call_stack.size() << " ";
+                if (CXXOperatorCallExpr * op = dyn_cast_or_null<CXXOperatorCallExpr>(call)) {
+                    if (op->isAssignmentOp()) {
+                        llvm::outs() << "CXXOperatorCallExpr: ";
+                        m_call_stack.push_back(op);
+                    } else {
+                        m_call_stack.push_back(std::monostate());
+                    }
+                } else if (CXXMemberCallExpr * member = dyn_cast_or_null<CXXMemberCallExpr>(call)) {
+                    llvm::outs() << "CXXMemberCallExpr: ";
+                    m_call_stack.push_back(member);
+                } else if (isa<UserDefinedLiteral>(call) || isa<CUDAKernelCallExpr>(call)) {
+                    m_call_stack.push_back(std::monostate());
+                } else { // CallExpr
+                    llvm::outs() << "CallExpr: ";
+                    m_call_stack.push_back(call);
                 }
 
+                //                if (isEnabled()) {
+                //                    llvm::outs() << "CallExpr: " << call->getDirectCallee()-> getQualifiedNameAsString();
+                //                    llvm::outs() << "  CXXMemberCallExpr: " << isa<CXXMemberCallExpr>(call);
+                //                    llvm::outs() << "  CXXOperatorCallExpr: " << isa<CXXOperatorCallExpr>(call);
+                //                    llvm::outs() << "  CallExpr: " << isa<CallExpr>(call);
+                //                    llvm::outs() << "\n\n";
+                //                    for (unsigned i = 0; i < call->getNumArgs(); i++) {
+                //                        //                    if (call->getArg(i)->getReferencedDeclOfCallee()) {
+                //                        //                        llvm::outs() << "getReferencedDeclOfCallee\n";
+                //                        //                        call->getArg(i)->getReferencedDeclOfCallee()->dumpColor();
+                //                        //                    } else {
+                //                        call->getArg(i)->dumpColor();
+                //                        //                    }
+                //                        //            llvm::outs() << call->dump()"call.getArg(...): ";
+                //
+                //                    }
+                //
+                //
+                //                    // CallExpr
+                //                    // CXXMemberCallExpr
+                //
+                //                    //                call->dumpColor();
+                //                }
+                llvm::outs() << "\n\n";
 
-                // CallExpr
-                // CXXMemberCallExpr
+                RecursiveASTVisitor<MemSafePlugin>::TraverseCallExpr(call);
+                m_call_stack.pop_back();
 
-                //                call->dumpColor();
             }
             return true;
         }
+
+        //        bool VisitCallExpr(const CallExpr *call) {
+        //            //CXXMemberCallExpr
+        //            //CXXOperatorCallExpr
+        //            //CUDAKernelCallExpr
+        //            //UserDefinedLiteral
+        //            // CallExpr: std::vector<int>::operator=  CXXMemberCallExpr: 0  CXXOperatorCallExpr: 1  CallExpr: 1
+        //            // CallExpr: std::vector<int>::shrink_to_fit  CXXMemberCallExpr: 1  CXXOperatorCallExpr: 0  CallExpr: 1
+        //            // CallExpr: std::vector<int>::cbegin  CXXMemberCallExpr: 1  CXXOperatorCallExpr: 0  CallExpr: 1
+        //            // CallExpr: std::sort  CXXMemberCallExpr: 0  CXXOperatorCallExpr: 0  CallExpr: 1
+        //
+        //            if (const CXXOperatorCallExpr * op = dyn_cast_or_null<CXXOperatorCallExpr>(call)) {
+        //                if (!op->isAssignmentOp()) {
+        //                    return true;
+        //                }
+        //                op->getOperator();
+        //            } else if (const CXXMemberCallExpr * member = dyn_cast_or_null<CXXMemberCallExpr>(call)) {
+        //            } else {
+        //                if (isa<UserDefinedLiteral>(call) || isa<CUDAKernelCallExpr>(call)) {
+        //                    return true;
+        //                } else { // CallExpr
+        //                }
+        //            }
+        //            if (isEnabled()) {
+        //                llvm::outs() << "CallExpr: " << call->getDirectCallee()-> getQualifiedNameAsString();
+        //                llvm::outs() << "  CXXMemberCallExpr: " << isa<CXXMemberCallExpr>(call);
+        //                llvm::outs() << "  CXXOperatorCallExpr: " << isa<CXXOperatorCallExpr>(call);
+        //                llvm::outs() << "  CallExpr: " << isa<CallExpr>(call);
+        //                llvm::outs() << "\n\n";
+        //                for (unsigned i = 0; i < call->getNumArgs(); i++) {
+        //                    //                    if (call->getArg(i)->getReferencedDeclOfCallee()) {
+        //                    //                        llvm::outs() << "getReferencedDeclOfCallee\n";
+        //                    //                        call->getArg(i)->getReferencedDeclOfCallee()->dumpColor();
+        //                    //                    } else {
+        //                    call->getArg(i)->dumpColor();
+        //                    //                    }
+        //                    //            llvm::outs() << call->dump()"call.getArg(...): ";
+        //
+        //                }
+        //
+        //
+        //                // CallExpr
+        //                // CXXMemberCallExpr
+        //
+        //                //                call->dumpColor();
+        //            }
+        //            return true;
+        //        }
 
         bool VisitDeclRefExpr(const DeclRefExpr * ref) {
             if (isEnabled() && !ref->getDecl()->isFunctionOrFunctionTemplate()) {
@@ -1171,6 +1331,9 @@ next_parent:
                     return true;
                 }
 
+                llvm::outs() << "SWAP\n\n";
+                call.dumpColor();
+
                 const DeclRefExpr * left;
                 VAR_LIST_INVAL var_left;
                 const char * found_left = expandAssignArgs(call.getArg(0), left, var_left);
@@ -1186,21 +1349,23 @@ next_parent:
 
                     if (var_left->second.level != var_right->second.level) {
 
-                        FIXIT_ERROR(call.getExprLoc(), "Cannot swap a shared variables of different lexical levels", "error");
+                        FIXIT_ERROR(call.getExprLoc(), "Cannot swap a shared variables of different lexical levels", MEMSAFE_KEYWORD_ERROR);
                         return true;
                     }
 
-                    FIXIT_DIAG(call.getExprLoc(), "Swap shared variables of the same lexical level", "approved");
+                    FIXIT_DIAG(call.getExprLoc(), "Swap shared variables of the same lexical level", MEMSAFE_KEYWORD_APPROVED);
 
                 } else {
 
-                    FIXIT_DIAG(call.getExprLoc(), "Swap not share", "approved");
+                    FIXIT_DIAG(call.getExprLoc(), "Swap not share", MEMSAFE_KEYWORD_APPROVED);
                 }
             }
             return true;
         }
 
         bool checkCXXOperatorCallExpr(const CXXOperatorCallExpr & assign) {
+
+            //            testDump(&assign);
 
             if (assign.getNumArgs() == 2) {
 
@@ -1218,11 +1383,11 @@ next_parent:
 
                     if (var_left->second.level >= var_right->second.level) {
 
-                        FIXIT_ERROR(assign.getOperatorLoc(), "Cannot copy a shared variable to an equal or higher lexical level", "error");
+                        FIXIT_ERROR(assign.getOperatorLoc(), "Cannot copy a shared variable to an equal or higher lexical level", MEMSAFE_KEYWORD_ERROR);
                         return true;
                     }
 
-                    FIXIT_DIAG(assign.getOperatorLoc(), "Copy share variable", "approved");
+                    FIXIT_DIAG(assign.getOperatorLoc(), "Copy share variable", MEMSAFE_KEYWORD_APPROVED);
 
                     //                    //                        llvm::outs() << "expr_right->IgnoreUnlessSpelledInSource()->dumpColor();\n";
                     //                    //                        expr_right->IgnoreUnlessSpelledInSource()->dumpColor();
@@ -1238,7 +1403,7 @@ next_parent:
                     //                        }
                     //                    }
 
-                    FIXIT_DIAG(assign.getOperatorLoc(), "Assign not share", "approved");
+                    FIXIT_DIAG(assign.getOperatorLoc(), "Assign not share", MEMSAFE_KEYWORD_APPROVED);
                 }
             }
             return true;
@@ -1246,7 +1411,7 @@ next_parent:
 
         bool checkCXXRecordDecl(const CXXRecordDecl & base) {
             if (AnnotateAttr * attr = base.getAttr<AnnotateAttr>()) {
-                if (attr->getAnnotation() != "memsafe") {
+                if (attr->getAnnotation() != TO_STR(MEMSAFE_KEYWORD_ATTRIBUTE)) {
                     return true;
                 }
 
@@ -1443,7 +1608,7 @@ next_parent:
                 FIXIT_ERROR(var->getLocation(), "Create auto variabe as static", "error");
                 //            } else if (INVAL == found_type) {
                 //
-                //                FIXIT_DIAG(var->getLocation(), "Iterator found", "approved");
+                //                FIXIT_DIAG(var->getLocation(), "Iterator found", MEMSAFE_KEYWORD_APPROVED);
                 //
                 //                if (const CXXMemberCallExpr * calle = dyn_cast_or_null<CXXMemberCallExpr>(init)) {
                 //
@@ -1474,7 +1639,7 @@ next_parent:
 
             } else {
 
-                FIXIT_DIAG(var->getLocation(), "Variable found", "approved");
+                FIXIT_DIAG(var->getLocation(), "Variable found", MEMSAFE_KEYWORD_APPROVED);
 
                 VarInfo::DeclType parent_name = std::monostate();
                 int level = 0;
@@ -1539,7 +1704,7 @@ next_parent:
 
 
             if (const ExprWithCleanups * inplace = dyn_cast_or_null<ExprWithCleanups>(ret.getRetValue())) {
-                FIXIT_DIAG(inplace->getBeginLoc(), "Return inplace", "approved");
+                FIXIT_DIAG(inplace->getBeginLoc(), "Return inplace", MEMSAFE_KEYWORD_APPROVED);
                 return true;
             }
 
@@ -1608,6 +1773,7 @@ next_parent:
         //            }
         //            return result;
         //        }
+
         /*
          * 
          * 
@@ -1624,6 +1790,8 @@ next_parent:
 
         bool TraverseDecl(Decl * D) {
 
+            checkDumpFilter(D);
+
             if (checkDeclAttributes(dyn_cast_or_null<EmptyDecl>(D))) {
 
             } else if (const NamespaceDecl * ns = dyn_cast_or_null<NamespaceDecl>(D)) {
@@ -1634,15 +1802,12 @@ next_parent:
 
                 if (isEnabled()) {
 
-                    llvm::outs() << "Enter FunctionDecl\n";
-
-                    //                    D->dumpColor();
+                    llvm::outs() << "Enter FunctionDecl: ";
+                    llvm::outs() << func->getNameAsString() << "\n";
 
                     //                m_scopes.push_back(parseParmVarDecl(*func));
 
                     m_scopes.push_back(ScopeLevel(func));
-                    //                checkFunctionDecl(*func);
-                    //parseParmVarDecl
 
                     RecursiveASTVisitor<MemSafePlugin>::TraverseDecl(D);
 
@@ -1675,10 +1840,6 @@ next_parent:
             }
 
 
-            //            if (D && opts->isEnabled()) {
-            //                D->dumpColor();
-            //            }
-
             RecursiveASTVisitor<MemSafePlugin>::TraverseDecl(D);
 
             return true;
@@ -1686,11 +1847,13 @@ next_parent:
 
         bool TraverseStmt(Stmt * stmt) {
             if (isEnabledStatus()) {
-                // If the plugin does not start to be defined, we do not process or check anything else.
 
-                //                if (stmt) {
-                //                    stmt->dumpColor();
-                //                }
+
+                if (const DeclStmt * decl = dyn_cast_or_null<DeclStmt>(stmt)) {
+                    checkDumpFilter(decl->getSingleDecl());
+                }
+                printDumpIfEnabled(stmt);
+
 
                 if (const CompoundStmt * block = dyn_cast_or_null<CompoundStmt>(stmt)) {
 
@@ -1705,19 +1868,19 @@ next_parent:
                     m_level.pop_back();
                     return true;
 
-                } else if (checkUnaryOperator(dyn_cast_or_null<UnaryOperator>(stmt))) {
+                    //                } else if (checkUnaryOperator(dyn_cast_or_null<UnaryOperator>(stmt))) {
                 }
 
-                if (const CXXOperatorCallExpr * assign = dyn_cast_or_null<CXXOperatorCallExpr>(stmt)) {
-                    checkCXXOperatorCallExpr(*assign);
-                } else if (const CallExpr * call = dyn_cast_or_null<CallExpr>(stmt)) {
-                    checkCallExpr(*call);
-                } else if (const ReturnStmt * ret = dyn_cast_or_null<ReturnStmt>(stmt)) {
-
-                    checkReturnStmt(*ret);
-                    //                } else if (stmt) {
-                    //                    // stmt->dumpColor();
-                }
+                //                if (const CXXOperatorCallExpr * assign = dyn_cast_or_null<CXXOperatorCallExpr>(stmt)) {
+                //                    checkCXXOperatorCallExpr(*assign);
+                //                } else if (const CallExpr * call = dyn_cast_or_null<CallExpr>(stmt)) {
+                //                    checkCallExpr(*call);
+                //                } else if (const ReturnStmt * ret = dyn_cast_or_null<ReturnStmt>(stmt)) {
+                //
+                //                    checkReturnStmt(*ret);
+                //                    //                } else if (stmt) {
+                //                    //                    // stmt->dumpColor();
+                //                }
 
                 RecursiveASTVisitor<MemSafePlugin>::TraverseStmt(stmt);
             }
@@ -1854,7 +2017,7 @@ next_parent:
     };
 }
 
-static ParsedAttrInfoRegistry::Add<MemSafeAttrInfo> A("memsafe", "Memory safety plugin control attribute");
-static FrontendPluginRegistry::Add<MemSafePluginASTAction> S("memsafe", "Memory safety plugin");
+static ParsedAttrInfoRegistry::Add<MemSafeAttrInfo> A(TO_STR(MEMSAFE_KEYWORD_ATTRIBUTE), "Memory safety plugin control attribute");
+static FrontendPluginRegistry::Add<MemSafePluginASTAction> S(TO_STR(MEMSAFE_KEYWORD_ATTRIBUTE), "Memory safety plugin");
 
 
