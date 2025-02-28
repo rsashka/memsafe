@@ -36,8 +36,9 @@
 #define MEMSAFE_KEYWORD_PROFILE "profile"
 #define MEMSAFE_KEYWORD_STATUS "status"
 #define MEMSAFE_KEYWORD_UNSAFE "unsafe"
-#define MEMSAFE_KEYWORD_DUMP "dump"
-#define MEMSAFE_KEYWORD_LINE "line"
+#define MEMSAFE_KEYWORD_PRINT_AST "print-ast"
+#define MEMSAFE_KEYWORD_PRINT_DUMP "print-dump"
+#define MEMSAFE_KEYWORD_BASELINE "baseline"
 
 #define MEMSAFE_KEYWORD_ENABLE "enable"
 #define MEMSAFE_KEYWORD_DISABLE "disable"
@@ -66,24 +67,28 @@
 #if defined __has_attribute
 #if __has_attribute( MEMSAFE_KEYWORD_ATTRIBUTE )
 #define MEMSAFE_ATTR(...) [[ MEMSAFE_KEYWORD_ATTRIBUTE (__VA_ARGS__)]]
-#define MEMSAFE_LINE(number) namespace MEMSAFE_ATTR( MEMSAFE_KEYWORD_LINE, #number) {}
+#define MEMSAFE_BASELINE(number) MEMSAFE_ATTR( MEMSAFE_KEYWORD_BASELINE, #number) void memsafe_stub();
 #endif
 #endif
 
 // Disable memory safety plugin attributes 
 #ifndef MEMSAFE_ATTR
 #define MEMSAFE_ATTR(...)
-#define MEMSAFE_LINE(number)
+#define MEMSAFE_BASELINE(number)
 #define MEMSAFE_DISABLE
 #endif
 
+#ifndef TO_STR
+#define TO_STR2(ARG) #ARG
+#define TO_STR(ARG) TO_STR2(ARG)
+#endif
 
 #define MEMSAFE_ERR(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_ERROR, name)
 #define MEMSAFE_WARN(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_WARNING, name)
 
 #define MEMSAFE_PROFILE(file) MEMSAFE_ATTR(MEMSAFE_KEYWORD_PROFILE, file)
 #define MEMSAFE_STATUS(status) MEMSAFE_ATTR(MEMSAFE_KEYWORD_STATUS, status)
-#define MEMSAFE_UNSAFE MEMSAFE_ATTR(MEMSAFE_KEYWORD_STATUS, MEMSAFE_KEYWORD_UNSAFE)
+#define MEMSAFE_UNSAFE MEMSAFE_ATTR(MEMSAFE_KEYWORD_UNSAFE, TO_STR(__LINE__))
 
 #define MEMSAFE_SHARED(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_SHARED, name)
 #define MEMSAFE_AUTO(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_AUTO, name)
@@ -94,7 +99,8 @@
 #define MEMSAFE_INV_TYPE(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_INVALIDATE_TYPE, name)
 #define MEMSAFE_INV_FUNC(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_INVALIDATE_FUNC, name)
 
-#define MEMSAFE_DUMP(filter) MEMSAFE_ATTR(MEMSAFE_KEYWORD_DUMP, filter) void memsafe_dump();
+#define MEMSAFE_PRINT_AST(filter) MEMSAFE_ATTR(MEMSAFE_KEYWORD_PRINT_AST, filter) void memsafe_stub();
+#define MEMSAFE_PRINT_DUMP(filter) MEMSAFE_ATTR(MEMSAFE_KEYWORD_PRINT_DUMP, filter) void memsafe_stub();
 
 /**
  * @def MEMSAFE_ATTR(...)
@@ -106,31 +112,34 @@
  */
 
 /**
- * @def MEMSAFE_LINE(number)
+ * @def MEMSAFE_BASELINE(number)
  * 
- * Set the current base line number of [[memsafe( "line", "num" )]] 
+ * Set the current base line number of [[memsafe( "baseline", "num" )]] 
  * markers used when debugging the plugin.
+ * 
  * If you don't use this macro, the line numbers at the debug marker positions 
- * will match the line numbers in the source file
+ * will match the line numbers in the source file.
  * 
- * @todo clang-20  error: 'memsafe' attribute annot be applied to a statement
- * To apply custom attributes to expressions, you need to update clang, 
- * as the current release version (19) 
- * does not have this functionality (handleStmtAttribute)
- * 
+ * Set base line number  is implemented as a set of custom attributes in the 
+ * stub function `void memsafe_stub()` forward declaration, as this can be done anywhere in C++ code.
  */
 
 /**
- * @def MEMSAFE_DUMP(...)
+ * @def MEMSAFE_PRINT_AST(...)
  * 
  * Enables or disables the output of expressions from the source file as AST nodes.
  * Expression filter is planned (not implemented yet).
- * Control over AST dump output is implemented as a set of user attributes in the stub function's forward declaration
  * 
- * @todo clang-20  error: 'memsafe' attribute annot be applied to a statement
- * To apply custom attributes to expressions, you need to update clang, 
- * as the current release version (19) 
- * does not have this functionality (handleStmtAttribute)
+ * Control over AST dump output is implemented as a set of custom attributes 
+ * in the stub function `void memsafe_stub()` forward declaration, as this can be done anywhere in C++ code.
+ */
+
+/**
+ * @def MEMSAFE_PRINT_DUMP(...)
+ * 
+ * Outputs the current state of the plugin and its main internal variables, 
+ * as well as a stack of code blocks (hierarchies of variable lifetimes) 
+ * for debugging and analysis.
  * 
  */
 
@@ -180,7 +189,7 @@
  * @def MEMSAFE_INV_TYPE("unsafe data type")
  * 
  * An unsafe data type that can be corrupted if data in the underlying object is modified.
- * i.e. __gnu_cxx::__normal_iterator, std::reverse_iterator, std::basic_string_view etc.
+ * i.e. __gnu_cxx::__normal_iterator, std::reverse_iterator, std::basic_string_view, std::span and etc.
  */
 
 
@@ -361,10 +370,10 @@ namespace memsafe { // Begin define memory safety classes
 
         typedef std::weak_ptr<V> WeakType;
 
-        VarShared(VarShared<V> &val) : memsafe::shared_ptr<V>(val) {
+        VarShared(const V &val) : memsafe::shared_ptr<V>(std::make_shared<V>(val)) {
         }
 
-        VarShared(V val) : memsafe::shared_ptr<V>(std::make_shared<V>(val)) {
+        VarShared(const VarShared<V> &val) : VarShared(*val) {
         }
 
         inline VarAuto<V, VarShared < V >> take(const VarSync<V>::TimeoutType &timeout = VarSync<V>::SyncTimeoutDeedlock) {
@@ -1007,9 +1016,15 @@ namespace memsafe { // Begin define memory safety classes
      * when an operation invalidates a pointer in the range [str.data(), str.data() + str.size()).
      */
     MEMSAFE_INV_TYPE("std::basic_string_view");
+    /*
+     * For a span s, pointers, iterators, and references to elements of s are invalidated 
+     * when an operation invalidates a pointer in the range [s.data(), s.data() + s.size()). 
+     */
+    MEMSAFE_INV_TYPE("std::span");
 
-    MEMSAFE_NONCONST_ARG("ignore");
-    MEMSAFE_NONCONST_METHOD("ignore");
+
+    MEMSAFE_NONCONST_ARG("ignored");
+    MEMSAFE_NONCONST_METHOD("ignored");
 
     MEMSAFE_INV_FUNC("std::swap");
     MEMSAFE_INV_FUNC("std::move");

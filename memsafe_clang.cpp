@@ -38,43 +38,103 @@ using namespace clang::ast_matchers;
 namespace {
 
 
-    /*
-     * Класс MemSafePlugin сделан как шаблон RecursiveASTVisitor по следующим причинам:
-     * - Обход AST происходит сверху вниз через все уровни вложености, что позволяет 
-     * динамически создать и очищать уже не нужную контекстную информацию для функций и классов.
-     * При поиске соотвестсвтий с помощью AST Matcher MatchCallback вызываются для найденнх узлов,
-     * но создавать и очищать нужную контекстную информацию при каждом вызова очень накладно.
-     * - RecursiveASTVisitor позволяет прерывать (или повторять) обход отдельных ветвей AST 
-     * в зависимоости от динамической контекстной информации.
-     * - Matcher обработывает AST только для конкретных указанных сопоставителей,
-     * и в случае появления нетривиальных сценариев, некоторые из них могут быть пропущены,
-     * тогда как RecursiveASTVisitor последовательно обходит все узлы AST.
+    /**
+     * @def MemSafePlugin
      * 
-     * Плагин используется как статический сигнлтон для хранения контекст и упрощения доступа из любых классов,
-     * но создается динамически, чтобы использовать контктеный CompilerInstance
+     * The MemSafePlugin class is made as a RecursiveASTVisitor template for the following reasons:
+     * - AST traversal occurs from top to bottom through all leaves, which allows to dynamically create and clear context information.
+     * Whereas when searching for matches using AST Matcher, MatchCallback only called for the found nodes,
+     * but clearing the necessary context information for each call is very expensive.
+     * - RecursiveASTVisitor allows interrupting (or repeating) traversal of individual AST node depending on dynamic context information.
+     * - Matcher processes AST only for specific specified matchers and analysis of missed (not processed) attributes is difficult for it,
+     * whereas RecursiveASTVisitor sequentially traverses all AST nodes regardless of the configured templates.
+     *
+     * The plugin is used as a static signleton to store context and simplify access from any classes,
+     * but is created dynamically to use the context CompilerInstance
+     *
+     * Traverse ... - can form the current context
+     * Visit ... - only analyze data without changing the context
+     * 
      */
 
     class MemSafePlugin;
     static std::unique_ptr<MemSafePlugin> plugin;
 
-    /*
+    /**
+     * @def MemSafeLogger
      * 
+     * Container for addeded attributes with a processing mark 
+     * (so as not to miss unprocessed attributes) and plugin analyzer log.
+     */
+
+    class MemSafeLogger {
+        const CompilerInstance &m_ci;
+        std::map<SourceLocation, bool> m_attrs;
+        std::vector<std::pair<SourceLocation, std::string>> m_logs;
+    public:
+
+        MemSafeLogger(const CompilerInstance &ci) : m_ci(ci) {
+        }
+
+        void Log(SourceLocation loc, std::string str) {
+            m_logs.push_back({std::move(loc), std::move(str)});
+        }
+
+        inline void AttrAdd(SourceLocation loc) {
+            assert(loc.isValid());
+            m_attrs.emplace(loc, false);
+        }
+
+        void AttrComplete(SourceLocation loc) {
+            auto found = m_attrs.find(loc);
+            if (found == m_attrs.end()) {
+                Log(loc, "Attribute location not found!");
+                //            } else if (found->second) {
+                //                Log(loc, std::format("Error reprocessing attribute! {}", found->first.printToString(m_ci.getSourceManager())));
+            } else {
+                found->second = true;
+            }
+        }
+
+        inline std::string LocToStr(const SourceLocation &loc) {
+            std::string str = loc.printToString(m_ci.getSourceManager());
+            size_t pos = str.find(' ');
+            if (pos == std::string::npos) {
+                return str;
+            }
+            return str.substr(0, pos);
+        }
+
+        void Dump(raw_ostream & out) {
+            for (auto &elem : m_logs) {
+                out << LocToStr(elem.first);
+                out << ": " << elem.second << "\n";
+            }
+            for (auto &elem : m_attrs) {
+                if (!elem.second) {
+                    out << LocToStr(elem.first);
+                    out << ": unprocessed attribute!\n";
+                }
+            }
+        }
+    };
+
+    static std::unique_ptr<MemSafeLogger> logger;
+
+    /**
+     * @def MemSafeAttrInfo
      * 
-     * 
-     * 
+     * Class for applies a custom attribute to any declaration 
+     * or expression without examining the arguments 
+     * (only the number of arguments and their type are checked).
      */
 
     struct MemSafeAttrInfo : public ParsedAttrInfo {
 
         MemSafeAttrInfo() {
-            // Can take up to 15 optional arguments, to emulate accepting a variadic
-            // number of arguments. This just illustrates how many arguments a
-            // `ParsedAttrInfo` can hold, we will not use that much in this example.
 
-            OptArgs = 8;
-            //            IsType = true;
-            // GNU-style __attribute__(("memsafe")) and C++/C23-style [[memsafe]] and
-            // [[::memsafe]] supported.
+            OptArgs = 3;
+
             static constexpr Spelling S[] = {
                 {ParsedAttr::AS_GNU, TO_STR(MEMSAFE_KEYWORD_ATTRIBUTE)},
                 {ParsedAttr::AS_C23, TO_STR(MEMSAFE_KEYWORD_ATTRIBUTE)},
@@ -84,123 +144,59 @@ namespace {
             Spellings = S;
         }
 
-        bool diagAppertainsToDecl(Sema &S, const ParsedAttr &Attr, const Decl *D) const override {
-            return true; //isa<EmptyDecl>(D) || isa<NamespaceDecl>(D) || isa<CXXRecordDecl>(D) || isa<FunctionDecl>(D);
+        AnnotateAttr * CreateAttr(Sema &S, const ParsedAttr &Attr) const {
+
+            if (Attr.getNumArgs() < 1 || Attr.getNumArgs() > 3) {
+
+                S.Diag(Attr.getLoc(), S.getDiagnostics().getCustomDiagID(
+                        DiagnosticsEngine::Error,
+                        "The attribute '" TO_STR(MEMSAFE_KEYWORD_ATTRIBUTE) "' expects two or three string literals as arguments."));
+
+                return nullptr;
+            }
+
+            SmallVector<Expr *, 4> ArgsBuf;
+            for (unsigned i = 0; i < Attr.getNumArgs(); i++) {
+
+                if (!dyn_cast<StringLiteral>(Attr.getArgAsExpr(i)->IgnoreParenCasts())) {
+                    S.Diag(Attr.getLoc(), S.getDiagnostics().getCustomDiagID(
+                            DiagnosticsEngine::Error, "Expected argument as a string literal"));
+                    return nullptr;
+                }
+
+                ArgsBuf.push_back(Attr.getArgAsExpr(i));
+            }
+
+            // Add empty second argument
+            if (Attr.getNumArgs() == 1) {
+                ArgsBuf.push_back(StringLiteral::CreateEmpty(S.Context, 0, 0, 0));
+            }
+
+
+            // Add attribute location to check after plugin processing
+            if (logger) {
+                logger->AttrAdd(Attr.getLoc());
+            }
+
+            return AnnotateAttr::Create(S.Context, TO_STR(MEMSAFE_KEYWORD_ATTRIBUTE), ArgsBuf.data(), ArgsBuf.size(), Attr.getRange());
         }
 
         AttrHandling handleDeclAttribute(Sema &S, Decl *D, const ParsedAttr &Attr) const override {
-
-            if (Attr.getNumArgs() > 2) {
-
-                unsigned ID = S.getDiagnostics().getCustomDiagID(
-                        DiagnosticsEngine::Error,
-                        "'" TO_STR(MEMSAFE_KEYWORD_ATTRIBUTE) "' attribute accept only one argument");
-                S.Diag(Attr.getLoc(), ID);
-                return AttributeNotApplied;
+            if (auto attr = CreateAttr(S, Attr)) {
+                D->addAttr(attr);
+                return AttributeApplied;
             }
-
-            //            llvm::outs() << "Attr.getNumArgs() " << Attr.getNumArgs() << "\n";
-
-            // If there are arguments, the first argument should be a string literal.
-            if (Attr.getNumArgs() > 0) {
-                auto *Arg0 = Attr.getArgAsExpr(0);
-                StringLiteral *Literal = dyn_cast<StringLiteral>(Arg0->IgnoreParenCasts());
-                if (!Literal) {
-                    unsigned ID = S.getDiagnostics().getCustomDiagID(
-                            DiagnosticsEngine::Error, "argument to the '" TO_STR(MEMSAFE_KEYWORD_ATTRIBUTE) "' "
-                            "attribute must be a string literal");
-                    S.Diag(Attr.getLoc(), ID);
-                    return AttributeNotApplied;
-                }
-
-                SmallVector<Expr *, 16> ArgsBuf;
-                for (unsigned i = 0; i < Attr.getNumArgs(); i++) {
-                    ArgsBuf.push_back(Attr.getArgAsExpr(i));
-                }
-
-                D->addAttr(AnnotateAttr::Create(S.Context, TO_STR(MEMSAFE_KEYWORD_ATTRIBUTE), ArgsBuf.data(),
-                        ArgsBuf.size(), Attr.getRange()));
-            } else {
-
-                // Attach an annotate attribute to the Decl.
-
-                D->addAttr(AnnotateAttr::Create(S.Context, TO_STR(MEMSAFE_KEYWORD_ATTRIBUTE), nullptr, 0,
-                        Attr.getRange()));
-            }
-
-            //            llvm::outs() << "AttributeApplied !!!!\n";
-            return AttributeApplied;
+            return AttributeNotApplied;
         }
 
-        /*
-         * @todo clang-20
-         * To apply custom attributes to expressions, you need to update clang, 
-         * as the current release version (19) 
-         * does not have this functionality (handleStmtAttribute)
-         * 
-         */
-
-        bool diagAppertainsToStmt(Sema &S, const ParsedAttr &Attr, const Stmt *St) const override {
-            //            St->dumpColor();
-            //            llvm::outs() << "diagAppertainsToStmt " << isa<ReturnStmt>(St) << "\n";
-            //            llvm::outs().flush();
-            return true; //isa<ReturnStmt>(St);
+        AttrHandling handleStmtAttribute(Sema &S, Stmt *St, const ParsedAttr &Attr, class Attr *&Result) const override {
+            if ((Result = CreateAttr(S, Attr))) {
+                return AttributeApplied;
+            }
+            return AttributeNotApplied;
         }
-        //
-        //        AttrHandling handleStmtAttribute(Sema &S, Stmt *St, const ParsedAttr &Attr) const override {
-        //
-        //            llvm::outs() << "handleStmtAttribute\n";
-        //            llvm::outs().flush();
-        //            St->dumpColor();
-        //
-        //            return AttributeApplied;
-        //            if (const ReturnStmt * ret = dyn_cast_or_null<ReturnStmt>(St)) {
-        //
-        //                if (Attr.getNumArgs() != 1) {
-        //
-        //                    unsigned ID = S.getDiagnostics().getCustomDiagID(
-        //                            DiagnosticsEngine::Error,
-        //                            "'memsafe' attribute accept only one argument");
-        //                    S.Diag(Attr.getLoc(), ID);
-        //                    return AttributeNotApplied;
-        //                }
-        //
-        //                auto *Arg0 = Attr.getArgAsExpr(0);
-        //                StringLiteral *Literal = dyn_cast<StringLiteral>(Arg0->IgnoreParenCasts());
-        //                if (!Literal) {
-        //                    unsigned ID = S.getDiagnostics().getCustomDiagID(
-        //                            DiagnosticsEngine::Error, "argument to the 'memsafe' "
-        //                            "attribute must be a string literal");
-        //                    S.Diag(Attr.getLoc(), ID);
-        //                    return AttributeNotApplied;
-        //                }
-        //
-        //                Expr * expr = Attr.getArgAsExpr(0);
-        //
-        //                expr->dumpColor();
-        //
-        //                SmallVector<Expr *, 16> ArgsBuf;
-        //                for (unsigned i = 0; i < Attr.getNumArgs(); i++) {
-        //                    ArgsBuf.push_back(Attr.getArgAsExpr(i));
-        //                }
-        //
-        //                //                St->addAttr(AnnotateAttr::Create(S.Context, "memsafe", ArgsBuf.data(), ArgsBuf.size(), Attr.getRange()));
-        //                return AttributeApplied;
-        //            }
-        //
-        //            return AttributeNotApplied;
-        //        }
 
     };
-
-
-    /*
-     * 
-     * 
-     * 
-     * 
-     * 
-     */
 
     /* 
      * 
@@ -244,44 +240,20 @@ namespace {
      * 
      */
 
-    struct VarInfo {
-        static const int NOLEVEL = std::numeric_limits<int>::lowest();
-        typedef std::variant<std::monostate, const FunctionDecl *, const FieldDecl *> DeclType;
-
-        const VarDecl &var;
-        const char * const &type;
-        /**
-         * Lexical level variable:
-         * 0 - static variables
-         * positive numbers - nesting level of the scope
-         * negative numbers - the level of data nesting (structures and classes taking into account all parents)
-         */
-        const int level;
-        /**
-         * Name from AST with function name (for automatic variables)
-         * or class/structure name for field names
-         * Null pointer for static variables
-         */
-        DeclType parent;
-    };
-
     struct DeclInfo {
         const ValueDecl * decl;
         const char * type;
     };
 
-    struct ScopeLevel {
-        /** 
-         * Map of lvalues for context (variable in namespace, function args or fields in class)
+    struct LifeTime {
+        typedef std::variant<std::monostate, const FunctionDecl *, const CXXTemporaryObjectExpr *, const CallExpr *, const CXXMemberCallExpr *, const CXXOperatorCallExpr *, const MemberExpr *> ScopeType;
+        /**
+         * The scope and lifetime of variables (code block, function definition, function or method call, etc.)
          */
-        std::map<std::string, DeclInfo> lval;
-        /** 
-         * Map of rvalues using for context (temp values in expresion and args for function calls)
-         */
-        //        std::map<std::string, const DeclRefExpr *> rval;
+        const ScopeType scope;
 
         /** 
-         * Map of iterators and dependent variables (iter => value)
+         * Map of iterators and reference variables (iter => value)
          */
         typedef std::map<std::string, std::string> DependentType;
         DependentType dependent;
@@ -292,29 +264,312 @@ namespace {
          * (data modifications that can invalidate the iterator)
          * (value => Location)
          */
-        typedef std::map<std::string, SourceLocation> BlockerType;
+        typedef std::map<std::string, std::vector<SourceLocation>> BlockerType;
         BlockerType blocker;
         static inline const BlockerType::iterator BlockerEnd = static_cast<BlockerType::iterator> (nullptr);
 
-        const FunctionDecl *func; // current function or null
+        // List of traking variables
+        std::map<const std::string, DeclInfo> vars;
 
-        std::vector<std::string> dump;
+        // List of un traking (other) variables
+        std::set<std::string> other;
 
-        ScopeLevel(const FunctionDecl *f = nullptr) : func(f) {
+        // Start location for FunctionDecl or other ...Calls, or End locattion for Stmt
+        SourceLocation location;
 
+        // Locattion for UNSAFE block or Invalid
+        SourceLocation unsafeLoc;
+
+        LifeTime(SourceLocation loc = SourceLocation(), const ScopeType c = std::monostate(), SourceLocation unsafe = SourceLocation())
+        : location(loc), scope(c), unsafeLoc(unsafe) {
         }
+
     };
+
+    class LifeTimeScope : SCOPE(protected) std::deque< LifeTime > { // use deque instead of vector as it preserves iterators when resizing
+
+    public:
+
+        enum ModifyMode : uint8_t {
+            UNKNOWN = 0,
+            BOTH_MODE = 1,
+            EDIT_ONLY = 2,
+            CONST_ONLY = 3,
+        };
+
+
+        const CompilerInstance &m_CI;
+
+        LifeTimeScope(const CompilerInstance &inst) : m_CI(inst) {
+        }
+
+        SourceLocation testUnsafe() {
+            auto iter = rbegin();
+            while (iter != rend()) {
+                if (iter->unsafeLoc.isValid()) {
+                    return iter->unsafeLoc;
+                }
+                iter++;
+            }
+            return SourceLocation();
+        }
+
+        inline bool testInplaceCaller() {
+
+            static_assert(std::is_same_v < std::monostate, std::variant_alternative_t < 0, LifeTime::ScopeType>>);
+            static_assert(std::is_same_v < const FunctionDecl *, std::variant_alternative_t < 1, LifeTime::ScopeType>>);
+
+            return back().scope.index() >= 2;
+        }
+
+        static ModifyMode testMode(const LifeTime::ScopeType &scope) {
+            if (std::holds_alternative<const MemberExpr *>(scope)) {
+                const MemberExpr *member = std::get<const MemberExpr *>(scope);
+
+                // llvm::outs() << "testMode: " << member->getMemberDecl()->getNameAsString() << " " << member->getMemberDecl() << "\n";
+
+                DeclContext * cls = member->getMemberDecl()->getDeclContext();
+                if (cls) {
+
+                    bool const_count = false;
+                    bool non_const_count = false;
+
+                    for (auto elem : cls->noload_lookup(member->getMemberDecl()->getDeclName())) {
+                        if (const CXXMethodDecl * method = dyn_cast<CXXMethodDecl>(elem)) {
+                            if (method->isConst()) {
+                                const_count = true;
+                            } else {
+                                non_const_count = true;
+                            }
+                        }
+                    }
+
+                    if (const_count && non_const_count) {
+                        return ModifyMode::BOTH_MODE;
+                    } else if (!const_count && non_const_count) {
+                        return ModifyMode::EDIT_ONLY;
+                    } else if (const_count && !non_const_count) {
+                        return ModifyMode::CONST_ONLY;
+                    }
+                }
+            } else if (std::holds_alternative<const CXXOperatorCallExpr *>(scope)) {
+
+                const CXXOperatorCallExpr *op = std::get<const CXXOperatorCallExpr *>(scope);
+                if (op->isAssignmentOp()) {
+                    return ModifyMode::EDIT_ONLY;
+                } else if (op->isComparisonOp() || op->isInfixBinaryOp()) {
+                    return ModifyMode::CONST_ONLY;
+                }
+
+            }
+            return ModifyMode::UNKNOWN;
+        }
+
+        static std::string getName(const LifeTime::ScopeType &scope) {
+
+            static_assert(std::is_same_v < const CallExpr *, std::variant_alternative_t < 3, LifeTime::ScopeType>>);
+            static_assert(std::is_same_v <const MemberExpr *, std::variant_alternative_t < 6, LifeTime::ScopeType>>);
+
+
+            const CallExpr * call = nullptr;
+            if (std::holds_alternative<const MemberExpr *>(scope)) {
+                //                llvm::outs() << "getMemberNameInfo(): " << std::get<const MemberExpr *>(scope)->getMemberDecl()->getNameAsString() << "\n";
+                return std::get<const MemberExpr *>(scope)->getMemberNameInfo().getAsString();
+
+            } else if (std::holds_alternative<const FunctionDecl *>(scope)) {
+
+                return std::get<const FunctionDecl *>(scope)->getNameAsString();
+
+            } else if (std::holds_alternative<const CXXMemberCallExpr *>(scope)) {
+                call = std::get<const CXXMemberCallExpr *>(scope);
+            } else if (std::holds_alternative<const CXXOperatorCallExpr *>(scope)) {
+                call = std::get<const CXXOperatorCallExpr *>(scope);
+            } else if (std::holds_alternative<const CallExpr *>(scope)) {
+                call = std::get<const CallExpr *>(scope);
+            }
+
+
+
+            if (call) {
+                return call->getDirectCallee()-> getQualifiedNameAsString();
+            }
+
+            return "";
+        }
+
+        std::string getCalleeName() {
+            auto iter = rbegin();
+            while (iter != rend()) {
+                std::string result = getName(iter->scope);
+                if (!result.empty()) {
+                    return result;
+                }
+                iter++;
+            }
+            return "";
+        }
+
+        SourceLocation testArgument() {
+            auto iter = rbegin();
+            while (iter != rend()) {
+                if (iter->unsafeLoc.isValid()) {
+                    return iter->unsafeLoc;
+                }
+                iter++;
+            }
+            return SourceLocation();
+        }
+
+        void PushScope(SourceLocation loc, LifeTime::ScopeType call = std::monostate(), SourceLocation unsafe = SourceLocation()) {
+            push_back(LifeTime(loc, call, unsafe));
+        }
+
+        void PopScope() {
+            assert(size() > 1); // First level reserved for static objects
+            pop_back();
+        }
+
+        LifeTime & back() {
+            assert(size()); // First level reserved for static objects
+            return std::deque< LifeTime >::back();
+        }
+
+        void AddVarDecl(const VarDecl * decl, const char *type, std::string name = "") {
+            assert(decl);
+            if (name.empty()) {
+                name = decl->getNameAsString();
+            }
+            assert(back().vars.find(name) == back().vars.end());
+            back().vars.emplace(name, DeclInfo({decl, type}));
+        }
+
+        LifeTime::DependentType::iterator findDependent(const std::string_view name) {
+            for (auto level = rbegin(); level != rend(); level++) {
+                auto found = level->dependent.find(name.begin());
+                if (found != level->dependent.end()) {
+                    return found;
+                }
+            }
+            return LifeTime::DependentEnd;
+        }
+
+        LifeTime::BlockerType::iterator findBlocker(const std::string_view name) {
+            for (auto level = rbegin(); level != rend(); level++) {
+                auto found = level->blocker.find(name.begin());
+                if (found != level->blocker.end()) {
+                    return found;
+                }
+            }
+            return LifeTime::BlockerEnd;
+        }
+
+        std::string Dump(const SourceLocation &loc, std::string_view filter) {
+
+            std::string result("\n\n");
+            if (loc.isValid()) {
+                if (loc.isMacroID()) {
+                    result += m_CI.getSourceManager().getExpansionLoc(loc).printToString(m_CI.getSourceManager());
+                } else {
+                    result += loc.printToString(m_CI.getSourceManager());
+                }
+                result += ": ";
+            }
+            result += "#print-dump ";
+            if (!filter.empty()) {
+                //@todo Create Dump filter 
+                result += std::format(" filter '{}' not implemented!", filter.begin());
+            }
+            result += "\n";
+
+            auto iter = begin();
+            while (iter != end()) {
+
+                if (iter->location.isValid()) {
+                    result += iter->location.printToString(m_CI.getSourceManager());
+
+                    std::string name = getName(iter->scope);
+                    if (!name.empty()) {
+                        result += " [";
+                        result += name;
+                        result += "]";
+                    }
+
+                } else {
+                    result += " #static ";
+                }
+
+                result += ": ";
+
+                std::string list;
+                auto iter_list = iter->vars.begin();
+                while (iter_list != iter->vars.end()) {
+
+                    if (!list.empty()) {
+                        list += ", ";
+                    }
+
+                    list += iter_list->first;
+                    iter_list++;
+                }
+
+                result += list;
+
+
+                std::string dep_str;
+                auto dep_list = iter->dependent.begin();
+                while (dep_list != iter->dependent.end()) {
+
+                    if (!dep_str.empty()) {
+                        dep_str += ", ";
+                    }
+
+                    dep_str += "(";
+                    dep_str += dep_list->first;
+                    dep_str += "=>";
+                    dep_str += dep_list->second;
+                    dep_str += ")";
+
+                    dep_list++;
+                }
+
+                if (!dep_str.empty()) {
+                    result += " #dep ";
+                    result += dep_str;
+                }
+
+
+                std::string other_str;
+                auto other_list = iter->other.begin();
+                while (other_list != iter->other.end()) {
+
+                    if (!other_str.empty()) {
+                        other_str += ", ";
+                    }
+
+                    other_str += *other_list;
+                    other_list++;
+                }
+
+                if (!other_str.empty()) {
+                    result += " #other ";
+                    result += other_str;
+                }
+
+                result += "\n";
+                iter++;
+            }
+            return result;
+        }
+
+    };
+
+    /*
+     * 
+     * 
+     */
 
     class MemSafePlugin : public RecursiveASTVisitor<MemSafePlugin> {
     public:
-        // A list of attribute parameters that the memory safety model will work with, 
-        // as well as the names of the class templates that are used to implement each data type.
-        //     
-        // Template class names are missing until they are defined during plugin initialization 
-        // in a namespace with the memsafe attribute and the 'define' argument 
-        // (i.e. namespace [[memsafa("define")]] ... )
-
-        //        static inline const char * VALUE = "value";
         static inline const char * SHARED = MEMSAFE_KEYWORD_SHARED;
         static inline const char * AUTO = MEMSAFE_KEYWORD_AUTO;
         static inline const char * INVAL_TYPE = MEMSAFE_KEYWORD_INVALIDATE_TYPE;
@@ -331,36 +586,38 @@ namespace {
         // The first string arguments in the `memsafe` attribute for working and managing the plugin
         static inline const char * PROFILE = MEMSAFE_KEYWORD_PROFILE;
         static inline const char * STATUS = MEMSAFE_KEYWORD_STATUS;
+
         static inline const char * ERROR = MEMSAFE_KEYWORD_ERROR;
         static inline const char * WARNING = MEMSAFE_KEYWORD_WARNING;
-        static inline const char * LINE = MEMSAFE_KEYWORD_LINE;
+        static inline const char * NOTE = MEMSAFE_KEYWORD_NOTE;
+        static inline const char * REMARK = MEMSAFE_KEYWORD_REMARK;
+        static inline const char * IGNORED = MEMSAFE_KEYWORD_IGNORED;
+
+        static inline const char * BASELINE = MEMSAFE_KEYWORD_BASELINE;
         static inline const char * UNSAFE = MEMSAFE_KEYWORD_UNSAFE;
-        static inline const char * DUMP = MEMSAFE_KEYWORD_DUMP;
+        static inline const char * PRINT_AST = MEMSAFE_KEYWORD_PRINT_AST;
+        static inline const char * PRINT_DUMP = MEMSAFE_KEYWORD_PRINT_DUMP;
 
         static inline const char * STATUS_ENABLE = MEMSAFE_KEYWORD_ENABLE;
         static inline const char * STATUS_DISABLE = MEMSAFE_KEYWORD_DISABLE;
         static inline const char * STATUS_PUSH = MEMSAFE_KEYWORD_PUSH;
         static inline const char * STATUS_POP = MEMSAFE_KEYWORD_POP;
 
-        std::set<std::string> m_listFirstArg{PROFILE, UNSAFE, SHARED, AUTO, INVAL_TYPE, INVAL_FUNC, WARNING, ERROR, STATUS, LINE, NONCONST_ARG, NONCONST_METHOD, DUMP};
+        std::set<std::string> m_listFirstArg{PROFILE, UNSAFE, SHARED, AUTO, INVAL_TYPE, INVAL_FUNC, WARNING, ERROR, STATUS, BASELINE, NONCONST_ARG, NONCONST_METHOD, PRINT_AST, PRINT_DUMP};
         std::set<std::string> m_listStatus{STATUS_ENABLE, STATUS_DISABLE, STATUS_PUSH, STATUS_POP};
-
-        std::set<std::string> m_listUnsafe;
-        std::set<const NamespaceDecl *> m_safeSet;
-        std::set<const NamespaceDecl *> m_unsafeSet;
 
         /**
          * List of base classes that contain strong pointers to data 
          * (copying a variable does not copy the data,  only the reference 
          * and increments the ownership counter).
          */
-        std::set<std::string> m_listShared;
+        std::set<std::string> m_type_shared;
         /**
          * List of base classes that contain strong pointers to data 
          * that can only be created in temporary variables 
          * (which are automatically deallocated when they go out of scope).
          */
-        std::set<std::string> m_listAuto;
+        std::set<std::string> m_type_auto;
         /**
          * List of base iterator types that must be tracked for strict control of dependent pointers.         
          */
@@ -370,22 +627,37 @@ namespace {
          */
         std::set<std::string> m_list_inval_func;
 
-        std::set<std::string> m_listWarning;
-        std::set<std::string> m_listError;
+        std::set<std::string> m_type_warning;
+        std::set<std::string> m_type_error;
+
         std::vector<bool> m_status{false};
 
-        std::set<std::string> m_is_template;
-        std::map<std::string, const CXXRecordDecl *> m_class_decl;
+
+        clang::DiagnosticsEngine::Level m_level_non_const_arg;
+        clang::DiagnosticsEngine::Level m_level_non_const_method;
+
+        bool m_warning_only;
+        std::string m_prefix;
+
+        static const inline std::pair<std::string, std::string> pair_empty{std::make_pair<std::string, std::string>("", "")};
+
+
+        bool is_fixit;
+        int64_t line_base;
+        int64_t line_number;
+
+        LifeTimeScope m_scopes;
 
         memsafe::StringMatcher m_dump_matcher;
         SourceLocation m_dump_location;
+        SourceLocation m_trace_location;
 
         const CompilerInstance &m_CI;
 
         MemSafePlugin(const CompilerInstance &instance) :
-        m_CI(instance), m_is_unsafe(false), m_warning_only(false), m_prefix("##memsafe"), is_fixit(false), line_base(0), line_number(0) {
+        m_CI(instance), m_scopes(instance), m_warning_only(false), m_prefix("##memsafe"), is_fixit(false), line_base(0), line_number(0) {
             // Zero level for static variables
-            m_scopes.push_back(ScopeLevel());
+            m_scopes.PushScope(SourceLocation(), std::monostate(), SourceLocation());
 
             m_warning_only = true;
 
@@ -401,37 +673,49 @@ namespace {
         }
 
         void dump() {
-            llvm::outs() << "m_listError: " << makeHelperString(m_listError) << "\n";
-            llvm::outs() << "m_listWarning: " << makeHelperString(m_listWarning) << "\n";
-            llvm::outs() << "m_listShared: " << makeHelperString(m_listShared) << "\n";
-            llvm::outs() << "m_listAuto: " << makeHelperString(m_listAuto) << "\n";
-            llvm::outs() << "m_list_inval_type: " << makeHelperString(m_list_inval_type) << "\n";
-            llvm::outs() << "m_list_inval_func: " << makeHelperString(m_list_inval_func) << "\n";
-            llvm::outs() << "m_varOther: " << makeHelperString(m_varOther) << "\n";
-
-            //            llvm::outs() << "m_iter_depend: ";
-            //            for (auto &elem : m_iter_depend) {
-            //                llvm::outs() << elem.first << ">>" << elem.second << " ";
-            //            }
-            //            llvm::outs() << "\n";
-            //
-            //            llvm::outs() << "m_iter_stoper: ";
-            //            for (auto &elem : m_iter_stoper) {
-            //                if (elem.second.isValid()) {
-            //                    llvm::outs() << elem.first << " ";
-            //                }
-            //            }
+            llvm::outs() << "#memsafe-dump\n";
+            llvm::outs() << "#error: " << makeHelperString(m_type_error) << "\n";
+            llvm::outs() << "#warning: " << makeHelperString(m_type_warning) << "\n";
+            llvm::outs() << "#shared: " << makeHelperString(m_type_shared) << "\n";
+            llvm::outs() << "#auto: " << makeHelperString(m_type_auto) << "\n";
+            llvm::outs() << "#type: " << makeHelperString(m_list_inval_type) << "\n";
+            llvm::outs() << "#func: " << makeHelperString(m_list_inval_func) << "\n";
             llvm::outs() << "\n";
-
-            // llvm::outs() << "m_listUnsafe: " << makeHelperString(m_listUnsafe) << "\n";
         }
 
-        /**
-         * Add pointer to unsafe namespace
-         */
-        void AddUnsafe(const NamespaceDecl *ns) {
-            assert(ns);
-            m_unsafeSet.insert(ns);
+        std::string LogPos(const SourceLocation &loc) {
+
+            size_t line_no = 0;
+            if (loc.isMacroID()) {
+                line_no = m_CI.getSourceManager().getSpellingLineNumber(m_CI.getSourceManager().getExpansionLoc(loc));
+            } else {
+                line_no = m_CI.getSourceManager().getSpellingLineNumber(loc);
+            }
+
+            if (loc.isValid()) {
+                return std::format("{}", line_no - line_base + line_number);
+            }
+            return "0";
+        }
+
+        void LogViolation(SourceLocation loc, std::string str, SourceLocation hash = SourceLocation()) {
+
+
+            if (logger) {
+                logger->Log(loc, std::format("#vio #{} {}", hash.isValid() ? LogPos(hash) : LogPos(loc), str));
+            }
+        }
+
+        void LogMessage(SourceLocation loc, std::string str, SourceLocation hash = SourceLocation()) {
+            if (logger) {
+                logger->Log(loc, std::format("#msg #{} {}", hash.isValid() ? LogPos(hash) : LogPos(loc), str));
+            }
+        }
+
+        void LogError(SourceLocation loc, std::string str, SourceLocation hash = SourceLocation()) {
+            if (logger) {
+                logger->Log(loc, std::format("#err #{} {}", hash.isValid() ? LogPos(hash) : LogPos(loc), str));
+            }
         }
 
         static std::string makeHelperString(const std::set<std::string> &set) {
@@ -448,13 +732,43 @@ namespace {
             return result;
         }
 
+        static bool checkBehavior(const std::string_view str, clang::DiagnosticsEngine::Level *level = nullptr) {
+            if (str.compare(ERROR) == 0) {
+                if (level) {
+                    *level = clang::DiagnosticsEngine::Level::Error;
+                }
+                return true;
+            } else if (str.compare(WARNING) == 0) {
+                if (level) {
+                    *level = clang::DiagnosticsEngine::Level::Warning;
+                }
+                return true;
+            } else if (str.compare(NOTE) == 0) {
+                if (level) {
+                    *level = clang::DiagnosticsEngine::Level::Note;
+                }
+                return true;
+            } else if (str.compare(REMARK) == 0) {
+                if (level) {
+                    *level = clang::DiagnosticsEngine::Level::Remark;
+                }
+                return true;
+            } else if (str.compare(IGNORED) == 0) {
+                if (level) {
+                    *level = clang::DiagnosticsEngine::Level::Ignored;
+                }
+                return true;
+            }
+            return false;
+        }
+
         std::string processArgs(std::string_view first, std::string_view second) {
 
             std::string result;
             if (first.empty() || second.empty()) {
                 if (first.compare(PROFILE) == 0) {
                     clear();
-                } else if (first.compare(UNSAFE) == 0 || first.compare(DUMP) == 0) {
+                } else if (first.compare(UNSAFE) == 0 || first.compare(PRINT_AST) == 0 || first.compare(PRINT_DUMP) == 0) {
                     // The second argument may be empty
                 } else {
                     result = "Two string literal arguments expected!";
@@ -470,6 +784,10 @@ namespace {
                 result += "'. Expected string argument from the following list: ";
                 result += first_list;
             }
+
+            static const char * LEVEL_ERROR_MESSAGE = "Required behavior not recognized! Allowed values: '"
+                    MEMSAFE_KEYWORD_ERROR "', '" "', '" MEMSAFE_KEYWORD_WARNING "', '" MEMSAFE_KEYWORD_NOTE "', '"
+                    MEMSAFE_KEYWORD_REMARK "' or '" MEMSAFE_KEYWORD_IGNORED "'.";
 
             if (result.empty()) {
                 if (first.compare(STATUS) == 0) {
@@ -505,20 +823,29 @@ namespace {
                     if (!second.empty()) {
                         result = "Loading profile from file is not implemented!";
                     }
-                } else if (first.compare(UNSAFE) == 0) {
-                    m_listUnsafe.emplace(second.begin());
+                    //                } else if (first.compare(UNSAFE) == 0) {
+                    //                    m_listUnsafe.emplace(second.begin());
                 } else if (first.compare(ERROR) == 0) {
-                    m_listError.emplace(second.begin());
+                    m_type_error.emplace(second.begin());
                 } else if (first.compare(WARNING) == 0) {
-                    m_listWarning.emplace(second.begin());
+                    m_type_warning.emplace(second.begin());
                 } else if (first.compare(SHARED) == 0) {
-                    m_listShared.emplace(second.begin());
+                    m_type_shared.emplace(second.begin());
                 } else if (first.compare(AUTO) == 0) {
-                    m_listAuto.emplace(second.begin());
+                    m_type_auto.emplace(second.begin());
                 } else if (first.compare(INVAL_TYPE) == 0) {
                     m_list_inval_type.emplace(second.begin());
                 } else if (first.compare(INVAL_FUNC) == 0) {
                     m_list_inval_func.emplace(second.begin());
+
+                } else if (first.compare(NONCONST_ARG) == 0) {
+                    if (!checkBehavior(second, &m_level_non_const_arg)) {
+                        result = LEVEL_ERROR_MESSAGE;
+                    }
+                } else if (first.compare(NONCONST_METHOD) == 0) {
+                    if (!checkBehavior(second, &m_level_non_const_method)) {
+                        result = LEVEL_ERROR_MESSAGE;
+                    }
                 }
             }
             return result;
@@ -528,10 +855,10 @@ namespace {
          * Check if class name is in the list of monitored classes
          */
 
-        inline const char * checkClassName(std::string_view type) {
-            if (m_listAuto.find(type.begin()) != m_listAuto.end()) {
+        const char * checkClassName(std::string_view type) {
+            if (m_type_auto.find(type.begin()) != m_type_auto.end()) {
                 return AUTO;
-            } else if (m_listShared.find(type.begin()) != m_listShared.end()) {
+            } else if (m_type_shared.find(type.begin()) != m_type_shared.end()) {
                 return SHARED;
             } else if (m_list_inval_type.find(type.begin()) != m_list_inval_type.end()) {
                 return INVAL_TYPE;
@@ -539,60 +866,56 @@ namespace {
             return nullptr;
         }
 
-        //        inline const char * checkClassNameIter(std::string_view type) {
-        //            if (m_listIter.find(type.begin()) != m_listIter.end()) {
-        //                return INVAL;
-        //            }
-        //            return nullptr;
-        //        }
-
         inline bool isEnabledStatus() {
             assert(!m_status.empty());
             return *m_status.rbegin();
         }
 
-
-        //        CompilerInstance &Instance;
-        bool m_is_unsafe;
-        bool m_warning_only;
-        std::string m_prefix;
-
-        static const inline std::pair<std::string, std::string> pair_empty{std::make_pair<std::string, std::string>("", "")};
-
-        typedef std::multimap<std::string, VarInfo> VAR_LIST_TYPE;
-        typedef std::multimap<std::string, VarInfo>::iterator VAR_LIST_INVAL;
-        VAR_LIST_TYPE m_varList;
-        std::set<std::string> m_varOther;
-
-        /**
-         * Add variable name to watchlist
+        /*
+         * plugin helper methods
+         * 
          */
-        void AddVariable(const VarDecl &var, const char * const &type, const int level, VarInfo::DeclType parent = std::monostate()) {
-
-            llvm::outs() << "AddVariable: " << var.getNameAsString() << " !!!\n";
-
-            //            if (m_varList.find(var.getQualifiedNameAsString()) != m_varList.end()) {
-            //                //  llvm::outs() << "AddVariable dublicate: " << name << "  " << type << " !!!\n";
-            //            }
-            m_varList.emplace(var.getNameAsString(), VarInfo{var, type, level, parent});
-            //            m_varList.emplace(var.getQualifiedNameAsString(), VarInfo{var, type, level, parent});
+        inline bool isEnabled() {
+            return isEnabledStatus();
         }
 
+        SourceLocation checkUnsafeBlock(const AttributedStmt * attrStmt) {
 
-        bool is_fixit;
-        int64_t line_base;
-        int64_t line_number;
+            if (attrStmt) {
 
-        std::vector<ScopeLevel> m_scopes;
+                auto attrs = attrStmt->getAttrs();
 
-        std::vector<const VarDecl *> m_decl;
-        std::vector<const CompoundStmt *> m_level;
+                for (auto &elem : attrs) {
 
-        inline bool isEnabled() {
-            return isEnabledStatus() && !m_is_unsafe;
+                    std::pair<std::string, std::string> pair = parseAttr(dyn_cast_or_null<AnnotateAttr>(elem));
+                    if (pair != pair_empty) {
+
+                        if (pair.first.compare(UNSAFE) == 0) {
+
+                            if (logger) {
+                                logger->AttrComplete(elem->getLocation());
+                            }
+
+                            LogMessage(attrStmt->getBeginLoc(), "Unsafe statement", attrStmt->getBeginLoc());
+
+                            return elem->getLocation();
+                        }
+                    }
+
+                }
+            }
+            return SourceLocation();
         }
 
         clang::DiagnosticsEngine::Level getLevel(clang::DiagnosticsEngine::Level original) {
+            SourceLocation loc = m_scopes.testUnsafe();
+            if (loc.isValid()) {
+                if (logger) {
+                    logger->AttrComplete(loc);
+                }
+                LogMessage(loc, "Unsafe statement");
+                return clang::DiagnosticsEngine::Level::Ignored;
+            }
             if (!isEnabled()) {
                 return clang::DiagnosticsEngine::Level::Ignored;
             } else if (original == clang::DiagnosticsEngine::Level::Error && m_warning_only) {
@@ -632,7 +955,7 @@ namespace {
             return message;
         }
 
-        std::pair<std::string, std::string> parseAttr(AnnotateAttr *attr) {
+        std::pair<std::string, std::string> parseAttr(const AnnotateAttr * const attr) {
             if (!attr || attr->getAnnotation() != TO_STR(MEMSAFE_KEYWORD_ATTRIBUTE) || attr->args_size() != 2) {
                 return pair_empty;
             }
@@ -647,14 +970,6 @@ namespace {
                         DiagnosticsEngine::Error, "Two string literal arguments expected!"));
                 return pair_empty;
             }
-
-            std::string error_str = processArgs(first->getString().str(), second->getString().str());
-            if (!error_str.empty()) {
-                clang::DiagnosticBuilder DB = getDiag().Report(attr->getLocation(), getDiag().getCustomDiagID(
-                        DiagnosticsEngine::Error, "Error detected: %0"));
-                DB.AddString(error_str);
-                return pair_empty;
-            }
             return std::make_pair < std::string, std::string>(first->getString().str(), second->getString().str());
         }
 
@@ -665,337 +980,62 @@ namespace {
          */
 
 
-        bool checkDeclAttributes(const Decl *ns) {
+        void checkDeclAttributes(const Decl *decl) {
             // Check namespace annotation attribute
             // This check should be done first as it is used to enable and disable the plugin.
 
-            if (!ns) {
-                return false;
+            if (!decl) {
+                return;
             }
 
-            AnnotateAttr * attr = ns->getAttr<AnnotateAttr>();
+            AnnotateAttr * attr = decl->getAttr<AnnotateAttr>();
             auto attr_args = parseAttr(attr);
 
             if (attr_args != pair_empty) {
 
-                if (attr_args.first.compare(LINE) == 0) {
+                std::string error_str = processArgs(attr_args.first, attr_args.second);
+
+                if (!error_str.empty()) {
+
+                    clang::DiagnosticBuilder DB = getDiag().Report(attr->getLocation(), getDiag().getCustomDiagID(
+                            DiagnosticsEngine::Error, "Error detected: %0"));
+                    DB.AddString(error_str);
+
+                    LogViolation(attr->getLocation(), error_str);
+
+                } else if (attr_args.first.compare(BASELINE) == 0) {
                     try {
-                        line_number = std::stoi(attr_args.second);
-                        if (ns->getLocation().isMacroID()) {
-                            line_base = getDiag().getSourceManager().getSpellingLineNumber(m_CI.getSourceManager().getExpansionLoc(ns->getLocation()));
-                        } else {
-                            line_base = m_CI.getSourceManager().getSpellingLineNumber(attr->getLocation());
+                        SourceLocation loc = decl->getLocation();
+                        if (loc.isMacroID()) {
+                            loc = m_CI.getSourceManager().getExpansionLoc(loc);
                         }
+                        line_base = getDiag().getSourceManager().getSpellingLineNumber(loc);
+                        line_number = std::stoi(attr_args.second);
+
+                        clang::DiagnosticBuilder DB = getDiag().Report(loc, getDiag().getCustomDiagID(
+                                DiagnosticsEngine::Note, "Mark baseline %0"));
+                        DB.AddString(std::to_string(line_number));
+
                     } catch (...) {
-                        getDiag().Report(ns->getLocation(), getDiag().getCustomDiagID(
+                        getDiag().Report(decl->getLocation(), getDiag().getCustomDiagID(
                                 DiagnosticsEngine::Error,
                                 "The second argument is expected to be a line number as a literal string!"));
                     }
+
                 } else if (attr_args.first.compare(STATUS) == 0) {
 
-                    clang::DiagnosticBuilder DB = getDiag().Report(ns->getLocation(), getDiag().getCustomDiagID(
-                            DiagnosticsEngine::Remark,
+                    clang::DiagnosticBuilder DB = getDiag().Report(decl->getLocation(), getDiag().getCustomDiagID(
+                            DiagnosticsEngine::Note,
                             "Status memory safety plugin is %0!"));
                     DB.AddString(attr_args.second);
 
                 }
-            }
-            return true;
-        }
 
-        /*
-         * 
-         * 
-         * 
-         * 
-         */
-        bool checkUnsafe(const Decl & decl) {
-
-            clang::DynTypedNodeList parents = m_CI.getASTContext().getParents(decl);
-
-            while (!parents.empty()) {
-                if (parents[0].get<TranslationUnitDecl>()) {
-                    break;
+                if (logger) {
+                    logger->AttrComplete(attr->getLocation());
                 }
 
-                if (const NamespaceDecl * ns = parents[0].get<NamespaceDecl>()) {
-                    //@todo Rewrite to check attribute
-                    if (m_unsafeSet.find(ns) != m_unsafeSet.end()) {
-                        FIXIT_DIAG(decl.getBeginLoc(), "Add mark \"unsafe\" namesapace", "unsafe");
-                        return true;
-                    }
-                }
-
-                parents = m_CI.getASTContext().getParents(parents[0]);
             }
-            return false;
-        }
-
-        VarInfo::DeclType findParenName(clang::DynTypedNodeList parents, int & level) {
-
-            level++;
-
-            while (!parents.empty()) {
-
-                if (parents[0].get<TranslationUnitDecl>()) {
-                    break;
-                }
-
-                if (const FunctionDecl * func = parents[0].get<FunctionDecl>()) {
-                    return func;
-                }
-
-                if (parents[0].get<CompoundStmt>()) {
-                    // CompoundStmt - определение внутри блока кода
-
-                    level++;
-                    goto next_parent;
-                }
-
-next_parent:
-                ;
-
-                parents = m_CI.getASTContext().getParents(parents[0]);
-            }
-            return std::monostate();
-        }
-
-        /*
-         * 
-         * 
-         */
-
-        std::string getCXXTypeName(const Type * type_ptr) {
-            std::string type_name;
-            if (const CXXRecordDecl * decl = type_ptr ? type_ptr->getAsCXXRecordDecl() : nullptr) { // Only C++ classes are checked
-                llvm::raw_string_ostream name(type_name);
-                decl->printQualifiedName(name);
-            }
-            return type_name;
-        }
-
-        const char * expandAssignArgs(const Expr * expr, const DeclRefExpr * &decl, VAR_LIST_INVAL & iter) {
-            decl = nullptr;
-            iter = m_varList.end();
-
-            if (!expr) {
-                return nullptr;
-            }
-
-            decl = dyn_cast_or_null<DeclRefExpr>(expr->IgnoreUnlessSpelledInSource());
-            if (!decl) {
-                return nullptr;
-            }
-
-            std::string type_name;
-            const ValueDecl *value = decl->getDecl();
-            if (value) {
-                type_name = getCXXTypeName(value->getType().getTypePtrOrNull());
-            } else {
-                type_name = getCXXTypeName(expr->getType().getTypePtrOrNull());
-            }
-
-            const char * name = checkClassName(type_name);
-
-            llvm::errs() << name << "  " << type_name << " !!!!!!!!!!!!!!\n\n";
-
-            iter = m_varList.find(decl->getNameInfo().getAsString());
-
-            if (name) {
-                if (iter == m_varList.end()) {
-                    decl->dumpColor();
-                    for (auto &elem : m_varList) {
-                        llvm::errs() << elem.first;
-                        llvm::errs() << " ";
-                    }
-                    llvm::errs() << "\n";
-
-                    FIXIT_ERROR(decl->getLocation(), "Variable detected ERROR", "error", decl->getNameInfo().getAsString());
-                } else {
-
-                    FIXIT_DIAG(decl->getLocation(), "Variable detected", name); //, iter->second.level);
-                }
-
-            } else {
-                if (m_varOther.find(decl->getNameInfo().getAsString()) == m_varOther.end()) {
-                    llvm::errs() << " !!!!!!!!!!!!!!!!!!!!!!!!! " << name << "  " << type_name << " !!!!!!!!!!!!!!\n\n";
-                    decl->dumpColor();
-                    FIXIT_ERROR(decl->getLocation(), "Other variable detected ERROR", "error", decl->getNameInfo().getAsString());
-                }
-            }
-            return name;
-        }
-
-        /*
-         * 
-         * 
-         */
-
-        bool VisitCXXRecordDecl(const CXXRecordDecl *decl) {
-            if (m_is_template.find(decl->getQualifiedNameAsString()) == m_is_template.end() && decl->hasDefinition()) {
-                /* 
-                 * if there are multiple implementations of a class with the same name 
-                 * (when specializing on the same template or when forward-declaring), 
-                 * only the latest version is stored, 
-                 * which is sufficient for analyzing the class interface                 
-                 */
-                m_class_decl.emplace(decl->getQualifiedNameAsString(), decl);
-            }
-            return true;
-        }
-
-        bool VisitClassTemplateDecl(const ClassTemplateDecl *decl) {
-            if (decl->isThisDeclarationADefinition()) {
-                /*
-                 * When we pre-declare a class specialization from a template, 
-                 * the class declaration already exists, but we only need the latest version 
-                 * of the template itself to parse its interface methods.
-                 */
-                m_is_template.emplace(decl->getQualifiedNameAsString());
-                m_class_decl.emplace(decl->getQualifiedNameAsString(), decl->getTemplatedDecl());
-            }
-            return true;
-        }
-
-        const DeclRefExpr * getInitializer(const VarDecl &decl) {
-            if (const CXXMemberCallExpr * calle = dyn_cast_or_null<CXXMemberCallExpr>(getExprInitializer(decl))) {
-                return dyn_cast<DeclRefExpr>(calle->getImplicitObjectArgument()->IgnoreUnlessSpelledInSource());
-            }
-            return nullptr;
-        }
-
-        ScopeLevel::DependentType::iterator findDependent(const std::string_view name) {
-            for (auto level = m_scopes.rbegin(); level != m_scopes.rend(); level++) {
-                auto found = level->dependent.find(name.begin());
-                if (found != level->dependent.end()) {
-                    return found;
-                }
-            }
-            return ScopeLevel::DependentEnd;
-        }
-
-        ScopeLevel::BlockerType::iterator findBlocker(const std::string_view name) {
-            for (auto level = m_scopes.rbegin(); level != m_scopes.rend(); level++) {
-                auto found = level->blocker.find(name.begin());
-                if (found != level->blocker.end()) {
-                    return found;
-                }
-            }
-            return ScopeLevel::BlockerEnd;
-        }
-
-        /** 
-         * Map of dependent variable usage and their possible changes 
-         * (data modifications that can invalidate the iterator)
-         * (value => Location)
-         */
-
-        bool VisitVarDecl(const VarDecl *var) {
-            // VarDecl - Represents a variable declaration or definition
-            if (isEnabled()) {
-                std::string var_name = var->getNameAsString();
-                const char * found_type = checkClassName(getCXXTypeName(var->getType().getTypePtrOrNull()));
-
-                llvm::outs() << "VarDecl: " << var_name << " " << found_type << "\n";
-
-                auto data = m_scopes.back().lval.emplace(var_name, DeclInfo({var, found_type}));
-
-                if (INVAL_TYPE == found_type) {
-
-                    FIXIT_DIAG(var->getLocation(), "Iterator found", MEMSAFE_KEYWORD_APPROVED);
-
-                    if (const DeclRefExpr * dre = getInitializer(*var)) { //dyn_cast<DeclRefExpr>(calle->getImplicitObjectArgument()->IgnoreUnlessSpelledInSource())
-
-                        std::string depend_name = dre->getDecl()->getNameAsString();
-
-                        //                        llvm::outs() << "Depended exists: " << depend_name << " !\n";
-                        //
-                        //                        for (auto level = m_scopes.rbegin(); level != m_scopes.rend(); level++) {
-                        //                            auto found = level->depend.find(depend_name);
-                        //                            if (found != level->depend.end()) {
-                        //
-                        //                                llvm::outs() << "Depended exists: " << depend_name << " !\n";
-                        //
-                        //                                for (auto stop_level = m_scopes.rbegin(); stop_level != m_scopes.rend(); stop_level++) {
-                        //                                    auto stop_found = stop_level->stoper.find(found->second);
-                        //                                    if (stop_found == stop_level->stoper.end()) {
-                        //                                        FIXIT_ERROR(var->getLocation(), "Logic error!", "error", found->second);
-                        //                                    } else if (stop_found->second.isValid()) {
-                        //                                        FIXIT_ERROR(stop_found->second, "Using the dependent variable after changing the main variable!", "error", found->second);
-                        //                                    } else {
-                        //                                        llvm::outs() << "Depended corrected!\n";
-                        //                                    }
-                        //                                }
-                        //                                return true;
-                        //                            }
-                        //                        }
-
-
-                        /* var_name - итератор объекта из переменной depend_name.
-                         * Итератор можно использовать пока не будет изменена исходная переменная
-                         * или вызов у нее не константного метода.
-                         * 
-                         * Первое изменение к decl_name устанавливает SourceLocation
-                         * из текщуей позиции, чтобы её очисить в вызове VisitDeclRefExpr.
-                         * После этого любая попытка обратиться итератору var_name 
-                         * будет приводить к ошибке.
-                         */
-
-                        m_scopes.back().dependent.emplace(var_name, depend_name);
-                        m_scopes.back().blocker.emplace(depend_name, dre->getLocation());
-
-                        llvm::outs() << dre->getLocation().printToString(m_CI.getSourceManager()) << "\n";
-
-                        depend_name += "=>";
-                        depend_name += var_name;
-
-                        FIXIT_DIAG(var->getLocation(), "Depended variables", "depend", depend_name);
-                    }
-                }
-            }
-            return true;
-        }
-
-        bool checkBlockerMethod(const std::string_view name, const DeclRefExpr & ref) {
-            //            ref.IgnoreUnlessSpelledInSource()->dumpColor();
-            //
-            //            llvm::outs() << "checkBlockerMethod - getReferencedDeclOfCallee\n";
-            //            ref.getReferencedDeclOfCallee()->dumpColor();
-            //            return true;
-
-            clang::DynTypedNodeList parents = m_CI.getASTContext().getParents(ref);
-
-            int count = 0;
-            while (!parents.empty()) {
-
-                if (parents[0].get<TranslationUnitDecl>()) {
-                    break;
-                } else if (const MemberExpr * member = parents[0].get<MemberExpr>()) {
-                    //                    member->dump();
-                    return true;
-                } else if (const CallExpr * call = parents[0].get<CallExpr>()) {
-                    //                    call->dump();
-                    return true;
-                }
-                //                if (parents[0].get<CompoundStmt>()) {
-                //                    // CompoundStmt - определение внутри блока кода
-                //
-                //                    level++;
-                //                    goto next_parent;
-                //                }
-                //
-                //next_parent:
-                //                ;
-
-                if (count++ > 3) {
-                    //                    parents[0].dump(llvm::outs(), m_CI.getASTContext());
-                    //                    llvm::outs() << "\n";
-                    return true;
-                }
-                parents = m_CI.getASTContext().getParents(parents[0]);
-            }
-            //            ref->dumpColor();
-            return true;
         }
 
         /*
@@ -1003,9 +1043,10 @@ next_parent:
          */
         void checkDumpFilter(const Decl * decl) {
             if (decl) {
-                auto attr_args = parseAttr(decl->getAttr<AnnotateAttr>());
+                AnnotateAttr *attr = decl->getAttr<AnnotateAttr>();
+                auto attr_args = parseAttr(attr);
                 if (attr_args != pair_empty) {
-                    if (attr_args.first.compare(DUMP) == 0) {
+                    if (attr_args.first.compare(PRINT_AST) == 0) {
                         if (attr_args.second.empty()) {
                             m_dump_matcher.Clear();
                         } else {
@@ -1018,28 +1059,44 @@ next_parent:
                         } else {
                             m_dump_location = decl->getLocation();
                         }
+
+                        if (logger) {
+                            logger->AttrComplete(attr->getLocation());
+                        }
+
+                    } else if (attr_args.first.compare(PRINT_DUMP) == 0) {
+
+                        if (skipLocation(m_trace_location, decl->getLocation())) {
+                            return;
+                        }
+
+                        if (logger) {
+                            logger->AttrComplete(attr->getLocation());
+                        }
+
+                        llvm::outs() << m_scopes.Dump(attr->getLocation(), attr_args.second);
                     }
                 }
             }
         }
 
-        bool skipDumpLocation(const SourceLocation &loc) {
+        bool skipLocation(SourceLocation &last, const SourceLocation &loc) {
             int64_t line_no = 0;
             SourceLocation test_loc = loc;
+
             if (loc.isMacroID()) {
                 test_loc = m_CI.getSourceManager().getExpansionLoc(loc);
             }
-            if (m_dump_location.isValid() &&
-                    m_CI.getSourceManager().getSpellingLineNumber(test_loc) == m_CI.getSourceManager().getSpellingLineNumber(m_dump_location)) {
-                //                llvm::outs() << "skip " << m_dump_location.printToString(m_CI.getSourceManager()) << "  " << test_loc.printToString(m_CI.getSourceManager()) << "\n";
+            if (last.isValid() &&
+                    m_CI.getSourceManager().getSpellingLineNumber(test_loc) == m_CI.getSourceManager().getSpellingLineNumber(last)) {
                 return true;
             }
-            m_dump_location = test_loc;
+            last = test_loc;
             return false;
         }
 
         void printDumpIfEnabled(const Stmt * stmt) {
-            if (!stmt || !isEnabled() || m_dump_matcher.isEmpty() || skipDumpLocation(stmt->getBeginLoc())) {
+            if (!stmt || !isEnabled() || m_dump_matcher.isEmpty() || skipLocation(m_dump_location, stmt->getBeginLoc())) {
                 return;
             }
 
@@ -1076,446 +1133,50 @@ next_parent:
             P.Visit(stmt); //dyn_cast<Decl>(decl)
         }
 
+        /*
+         * 
+         * 
+         */
 
-
-
-        //        Decl *Expr::getReferencedDeclOfCallee() {
-        //            Expr *CEE = IgnoreParenImpCasts();
-        //
-        //            while (auto *NTTP = dyn_cast<SubstNonTypeTemplateParmExpr>(CEE))
-        //                CEE = NTTP->getReplacement()->IgnoreParenImpCasts();
-        //
-        //            // If we're calling a dereference, look at the pointer instead.
-        //            while (true) {
-        //                if (auto *BO = dyn_cast<BinaryOperator>(CEE)) {
-        //                    if (BO->isPtrMemOp()) {
-        //                        CEE = BO->getRHS()->IgnoreParenImpCasts();
-        //                        continue;
-        //                    }
-        //                } else if (auto *UO = dyn_cast<UnaryOperator>(CEE)) {
-        //                    if (UO->getOpcode() == UO_Deref || UO->getOpcode() == UO_AddrOf ||
-        //                            UO->getOpcode() == UO_Plus) {
-        //                        CEE = UO->getSubExpr()->IgnoreParenImpCasts();
-        //                        continue;
-        //                    }
-        //                }
-        //                break;
-        //            }
-        //
-        //            if (auto *DRE = dyn_cast<DeclRefExpr>(CEE))
-        //                return DRE->getDecl();
-        //            if (auto *ME = dyn_cast<MemberExpr>(CEE))
-        //                return ME->getMemberDecl();
-        //            if (auto *BE = dyn_cast<BlockExpr>(CEE))
-        //                return BE->getBlockDecl();
-        //
-        //            return nullptr;
-        //        }
-
-        typedef std::variant<std::monostate, const CXXMemberCallExpr *, const CXXOperatorCallExpr *, CallExpr *> CallType;
-        std::vector<CallType> m_call_stack;
-
-        bool TraverseCallExpr(CallExpr * call) {
-            if (isEnabledStatus()) {
-
-                //CXXMemberCallExpr
-                //CXXOperatorCallExpr
-                //CUDAKernelCallExpr
-                //UserDefinedLiteral
-                // CallExpr: std::vector<int>::operator=  CXXMemberCallExpr: 0  CXXOperatorCallExpr: 1  CallExpr: 1
-                // CallExpr: std::vector<int>::shrink_to_fit  CXXMemberCallExpr: 1  CXXOperatorCallExpr: 0  CallExpr: 1
-                // CallExpr: std::vector<int>::cbegin  CXXMemberCallExpr: 1  CXXOperatorCallExpr: 0  CallExpr: 1
-                // CallExpr: std::sort  CXXMemberCallExpr: 0  CXXOperatorCallExpr: 0  CallExpr: 1
-
-                llvm::outs() << "TraverseCallExpr: " << call->getDirectCallee()-> getQualifiedNameAsString() << " " << m_call_stack.size() << " ";
-                if (CXXOperatorCallExpr * op = dyn_cast_or_null<CXXOperatorCallExpr>(call)) {
-                    if (op->isAssignmentOp()) {
-                        llvm::outs() << "CXXOperatorCallExpr: ";
-                        m_call_stack.push_back(op);
-                    } else {
-                        m_call_stack.push_back(std::monostate());
-                    }
-                } else if (CXXMemberCallExpr * member = dyn_cast_or_null<CXXMemberCallExpr>(call)) {
-                    llvm::outs() << "CXXMemberCallExpr: ";
-                    m_call_stack.push_back(member);
-                } else if (isa<UserDefinedLiteral>(call) || isa<CUDAKernelCallExpr>(call)) {
-                    m_call_stack.push_back(std::monostate());
-                } else { // CallExpr
-                    llvm::outs() << "CallExpr: ";
-                    m_call_stack.push_back(call);
-                }
-
-                //                if (isEnabled()) {
-                //                    llvm::outs() << "CallExpr: " << call->getDirectCallee()-> getQualifiedNameAsString();
-                //                    llvm::outs() << "  CXXMemberCallExpr: " << isa<CXXMemberCallExpr>(call);
-                //                    llvm::outs() << "  CXXOperatorCallExpr: " << isa<CXXOperatorCallExpr>(call);
-                //                    llvm::outs() << "  CallExpr: " << isa<CallExpr>(call);
-                //                    llvm::outs() << "\n\n";
-                //                    for (unsigned i = 0; i < call->getNumArgs(); i++) {
-                //                        //                    if (call->getArg(i)->getReferencedDeclOfCallee()) {
-                //                        //                        llvm::outs() << "getReferencedDeclOfCallee\n";
-                //                        //                        call->getArg(i)->getReferencedDeclOfCallee()->dumpColor();
-                //                        //                    } else {
-                //                        call->getArg(i)->dumpColor();
-                //                        //                    }
-                //                        //            llvm::outs() << call->dump()"call.getArg(...): ";
-                //
-                //                    }
-                //
-                //
-                //                    // CallExpr
-                //                    // CXXMemberCallExpr
-                //
-                //                    //                call->dumpColor();
-                //                }
-                llvm::outs() << "\n\n";
-
-                RecursiveASTVisitor<MemSafePlugin>::TraverseCallExpr(call);
-                m_call_stack.pop_back();
-
+        std::string getCXXTypeName(const Type * type_ptr) {
+            std::string type_name;
+            if (const CXXRecordDecl * decl = type_ptr ? type_ptr->getAsCXXRecordDecl() : nullptr) { // Only C++ classes are checked
+                llvm::raw_string_ostream name(type_name);
+                decl->printQualifiedName(name);
             }
-            return true;
+            return type_name;
         }
 
-        //        bool VisitCallExpr(const CallExpr *call) {
-        //            //CXXMemberCallExpr
-        //            //CXXOperatorCallExpr
-        //            //CUDAKernelCallExpr
-        //            //UserDefinedLiteral
-        //            // CallExpr: std::vector<int>::operator=  CXXMemberCallExpr: 0  CXXOperatorCallExpr: 1  CallExpr: 1
-        //            // CallExpr: std::vector<int>::shrink_to_fit  CXXMemberCallExpr: 1  CXXOperatorCallExpr: 0  CallExpr: 1
-        //            // CallExpr: std::vector<int>::cbegin  CXXMemberCallExpr: 1  CXXOperatorCallExpr: 0  CallExpr: 1
-        //            // CallExpr: std::sort  CXXMemberCallExpr: 0  CXXOperatorCallExpr: 0  CallExpr: 1
-        //
-        //            if (const CXXOperatorCallExpr * op = dyn_cast_or_null<CXXOperatorCallExpr>(call)) {
-        //                if (!op->isAssignmentOp()) {
-        //                    return true;
-        //                }
-        //                op->getOperator();
-        //            } else if (const CXXMemberCallExpr * member = dyn_cast_or_null<CXXMemberCallExpr>(call)) {
-        //            } else {
-        //                if (isa<UserDefinedLiteral>(call) || isa<CUDAKernelCallExpr>(call)) {
-        //                    return true;
-        //                } else { // CallExpr
-        //                }
-        //            }
-        //            if (isEnabled()) {
-        //                llvm::outs() << "CallExpr: " << call->getDirectCallee()-> getQualifiedNameAsString();
-        //                llvm::outs() << "  CXXMemberCallExpr: " << isa<CXXMemberCallExpr>(call);
-        //                llvm::outs() << "  CXXOperatorCallExpr: " << isa<CXXOperatorCallExpr>(call);
-        //                llvm::outs() << "  CallExpr: " << isa<CallExpr>(call);
-        //                llvm::outs() << "\n\n";
-        //                for (unsigned i = 0; i < call->getNumArgs(); i++) {
-        //                    //                    if (call->getArg(i)->getReferencedDeclOfCallee()) {
-        //                    //                        llvm::outs() << "getReferencedDeclOfCallee\n";
-        //                    //                        call->getArg(i)->getReferencedDeclOfCallee()->dumpColor();
-        //                    //                    } else {
-        //                    call->getArg(i)->dumpColor();
-        //                    //                    }
-        //                    //            llvm::outs() << call->dump()"call.getArg(...): ";
-        //
-        //                }
-        //
-        //
-        //                // CallExpr
-        //                // CXXMemberCallExpr
-        //
-        //                //                call->dumpColor();
-        //            }
-        //            return true;
-        //        }
-
-        bool VisitDeclRefExpr(const DeclRefExpr * ref) {
-            if (isEnabled() && !ref->getDecl()->isFunctionOrFunctionTemplate()) {
-
-                std::string ref_name = ref->getDecl()->getNameAsString();
-
-                llvm::outs() << "DeclRefExpr: " << ref_name << "\n";
-
-                SourceLocation cur_location = ref->getLocation();
-
-                clang::Expr::Classification cls = ref->ClassifyModifiable(m_CI.getASTContext(), cur_location);
-                //                Expr::isModifiableLvalueResult mod = ref->isModifiableLvalue(m_CI.getSourceManager(), ref->getLocation());
-                llvm::outs() << "isModifiable(): " << cls.getModifiable() << "\n";
-
-
-                auto found = findBlocker(ref_name);
-                if (found != ScopeLevel::BlockerEnd) {
-                    if (found->second == cur_location) {
-
-                        // First use -> clear source location
-                        llvm::outs() << "Clear location!\n";
-                        found->second = SourceLocation();
-
-                    } else {
-
-                        if (checkBlockerMethod(ref_name, *ref)) {
-                            found->second = cur_location;
-                            llvm::outs() << "Set location: " << cur_location.printToString(m_CI.getSourceManager()) << "\n";
+        const char * checkClassNameTracking(const CXXRecordDecl * type) {
+            const char * result = type ? checkClassName(type->getQualifiedNameAsString()) : nullptr;
+            const CXXRecordDecl * cxx = dyn_cast_or_null<CXXRecordDecl>(type);
+            if (cxx) {
+                for (auto iter = cxx->bases_begin(); !result && iter != cxx->bases_end(); iter++) {
+                    if (iter->isBaseOfClass()) {
+                        if (const CXXRecordDecl * base = iter->getType()->getAsCXXRecordDecl()) {
+                            result = checkClassNameTracking(base);
                         }
                     }
                 }
-
-                auto depend_found = findDependent(ref_name);
-                if (depend_found != ScopeLevel::DependentEnd) {
-
-                    llvm::outs() << "Depend found: " << ref_name << "\n";
-
-                    auto block_found = findBlocker(depend_found->second);
-                    if (block_found != ScopeLevel::BlockerEnd) {
-
-                        llvm::outs() << "Block found: " << depend_found->second << "\n";
-
-                        if (block_found->second.isValid()) {
-                            FIXIT_ERROR(ref->getLocation(), "Using the dependent variable after changing the main variable!", "error", block_found->second.printToString(m_CI.getSourceManager()));
-                        } else {
-                            llvm::outs() << "Depended " << ref_name << " corrected!\n";
-                        }
-                    }
-                }
-
             }
-            return true;
+            return result;
         }
 
-        bool checkCallExpr(const CallExpr & call) {
-
-
-            //CXXMemberCallExpr 0x5d4170f92650 'void'
-            //`-MemberExpr 0x5d4170f924d0 '<bound member function type>' .clear 0x73b43e7ce7e0
-            //  `-DeclRefExpr 0x5d4170f924b0 'std::vector<int>':'class std::vector<int>' lvalue Var 0x73b43dfc9d90 'vect' 'std::vector<int>':'class std::vector<int>'
-
-            //CallExpr 0x73b43df4b9c8 'void'
-            //|-ImplicitCastExpr 0x73b43df4b9b0 'void (*)(class __gnu_cxx::__normal_iterator<int *, class std::vector<int> >, class __gnu_cxx::__normal_iterator<int *, class std::vector<int> >)' <FunctionToPointerDecay>
-            //| `-DeclRefExpr 0x5d4170f939e0 'void (class __gnu_cxx::__normal_iterator<int *, class std::vector<int> >, class __gnu_cxx::__normal_iterator<int *, class std::vector<int> >)' lvalue Function 0x5d4170f938d8 'sort' 'void (class __gnu_cxx::__normal_iterator<int *, class std::vector<int> >, class __gnu_cxx::__normal_iterator<int *, class std::vector<int> >)' (FunctionTemplate 0x5d416f53f4e8 'sort')
-            //|   `-NestedNameSpecifier Namespace 0x73b43e28b4a0 'std'
-            //|-CXXConstructExpr 0x73b43df4bfa0 'class __gnu_cxx::__normal_iterator<int *, class std::vector<int> >' 'void (const __normal_iterator<int *, vector<int> > &) noexcept'
-            //| `-ImplicitCastExpr 0x73b43df4bf50 'const __normal_iterator<int *, vector<int> >':'const class __gnu_cxx::__normal_iterator<int *, class std::vector<int> >' lvalue <NoOp>
-            //|   `-DeclRefExpr 0x5d4170f926f0 'iterator':'class __gnu_cxx::__normal_iterator<int *, class std::vector<int> >' lvalue Var 0x73b43e7ebc58 'beg' 'iterator':'class __gnu_cxx::__normal_iterator<int *, class std::vector<int> >'
-            //`-CallExpr 0x5d4170f93678 'decltype(__cont.end())':'class __gnu_cxx::__normal_iterator<int *, class std::vector<int> >'
-            //  |-ImplicitCastExpr 0x5d4170f93660 'auto (*)(class std::vector<int> &) -> decltype(__cont.end())' <FunctionToPointerDecay>
-            //  | `-DeclRefExpr 0x5d4170f932c0 'auto (class std::vector<int> &) -> decltype(__cont.end())' lvalue Function 0x5d4170f92b88 'end' 'auto (class std::vector<int> &) -> decltype(__cont.end())' (FunctionTemplate 0x5d416f0bfb78 'end')
-            //  |   `-NestedNameSpecifier Namespace 0x73b43e28b4a0 'std'
-            //  `-DeclRefExpr 0x5d4170f927a0 'std::vector<int>':'class std::vector<int>' lvalue Var 0x73b43dfc9d90 'vect' 'std::vector<int>':'class std::vector<int>'
-            //CallExpr 0x5d4170f93678 'decltype(__cont.end())':'class __gnu_cxx::__normal_iterator<int *, class std::vector<int> >'
-            //|-ImplicitCastExpr 0x5d4170f93660 'auto (*)(class std::vector<int> &) -> decltype(__cont.end())' <FunctionToPointerDecay>
-            //| `-DeclRefExpr 0x5d4170f932c0 'auto (class std::vector<int> &) -> decltype(__cont.end())' lvalue Function 0x5d4170f92b88 'end' 'auto (class std::vector<int> &) -> decltype(__cont.end())' (FunctionTemplate 0x5d416f0bfb78 'end')
-            //|   `-NestedNameSpecifier Namespace 0x73b43e28b4a0 'std'
-            //`-DeclRefExpr 0x5d4170f927a0 'std::vector<int>':'class std::vector<int>' lvalue Var 0x73b43dfc9d90 'vect' 'std::vector<int>':'class std::vector<int>'
-            //
-
-            //            call.dump();
-
-            //            for (unsigned i = 0; i < call.getNumArgs(); i++) {
-            //                llvm::outs() << "call.getArg(...): ";
-            //                call.getArg(i)->dumpColor();
-            //
-            //                if (const DeclRefExpr * decl_expr = dyn_cast_or_null<DeclRefExpr>(call.getArg(i)->IgnoreUnlessSpelledInSource())) {
-            //                    std::string var_name = decl_expr->getNameInfo().getAsString();
-            //                    auto found = m_iter_depend.find(var_name);
-            //                    if (found != m_iter_depend.end()) {
-            //                        auto stoper = m_iter_stoper.find(found->second);
-            //                        if (stoper == m_iter_stoper.end()) {
-            //                            FIXIT_ERROR(decl_expr->getLocation(), "Logic error!", "error", var_name);
-            //                        } else if (stoper->second.isValid()) {
-            //                            FIXIT_ERROR(stoper->second, "Using the dependent variable after changing the main variable!", "error", var_name);
-            //                        }
-            //                    }
-            //                }
-            //            }
-
-
-            if (call.getNumArgs() == 2) {
-
-                if (call.getDirectCallee()->getNameInfo().getAsString() .compare("swap") != 0) {
-                    return true;
-                }
-
-                llvm::outs() << "SWAP\n\n";
-                call.dumpColor();
-
-                const DeclRefExpr * left;
-                VAR_LIST_INVAL var_left;
-                const char * found_left = expandAssignArgs(call.getArg(0), left, var_left);
-
-
-                const DeclRefExpr * right;
-                VAR_LIST_INVAL var_right;
-                const char * found_right = expandAssignArgs(call.getArg(1), right, var_right);
-
-
-                if (found_left && found_right
-                        && SHARED == found_left && SHARED == found_right) {
-
-                    if (var_left->second.level != var_right->second.level) {
-
-                        FIXIT_ERROR(call.getExprLoc(), "Cannot swap a shared variables of different lexical levels", MEMSAFE_KEYWORD_ERROR);
-                        return true;
-                    }
-
-                    FIXIT_DIAG(call.getExprLoc(), "Swap shared variables of the same lexical level", MEMSAFE_KEYWORD_APPROVED);
-
-                } else {
-
-                    FIXIT_DIAG(call.getExprLoc(), "Swap not share", MEMSAFE_KEYWORD_APPROVED);
-                }
+        const DeclRefExpr * getInitializer(const VarDecl &decl) {
+            if (const CXXMemberCallExpr * calle = dyn_cast_or_null<CXXMemberCallExpr>(getExprInitializer(decl))) {
+                return dyn_cast<DeclRefExpr>(calle->getImplicitObjectArgument()->IgnoreUnlessSpelledInSource()->IgnoreImplicit());
             }
-            return true;
-        }
-
-        bool checkCXXOperatorCallExpr(const CXXOperatorCallExpr & assign) {
-
-            //            testDump(&assign);
-
-            if (assign.getNumArgs() == 2) {
-
-
-                const DeclRefExpr * left;
-                VAR_LIST_INVAL var_left;
-                const char * found_left = expandAssignArgs(assign.getArg(0), left, var_left);
-
-                const DeclRefExpr * right;
-                VAR_LIST_INVAL var_right;
-                const char * found_right = expandAssignArgs(assign.getArg(1), right, var_right);
-
-
-                if (found_left == SHARED && found_right == SHARED) {
-
-                    if (var_left->second.level >= var_right->second.level) {
-
-                        FIXIT_ERROR(assign.getOperatorLoc(), "Cannot copy a shared variable to an equal or higher lexical level", MEMSAFE_KEYWORD_ERROR);
-                        return true;
-                    }
-
-                    FIXIT_DIAG(assign.getOperatorLoc(), "Copy share variable", MEMSAFE_KEYWORD_APPROVED);
-
-                    //                    //                        llvm::outs() << "expr_right->IgnoreUnlessSpelledInSource()->dumpColor();\n";
-                    //                    //                        expr_right->IgnoreUnlessSpelledInSource()->dumpColor();
-                    //                    //                        llvm::outs() << "expr_right->IgnoreUnlessSpelledInSource()->dumpColor();\n";
-                    //                    //                        expr_right->dumpColor();
-                    //
-                } else {
-
-                    //                    if (assign.isAssignmentOp()) {
-                    //                        auto found = m_iter_stoper.find(left->getNameInfo().getAsString());
-                    //                        if (found != m_iter_stoper.end()) {
-                    //                            found->second = assign.getOperatorLoc();
-                    //                        }
-                    //                    }
-
-                    FIXIT_DIAG(assign.getOperatorLoc(), "Assign not share", MEMSAFE_KEYWORD_APPROVED);
-                }
-            }
-            return true;
-        }
-
-        bool checkCXXRecordDecl(const CXXRecordDecl & base) {
-            if (AnnotateAttr * attr = base.getAttr<AnnotateAttr>()) {
-                if (attr->getAnnotation() != TO_STR(MEMSAFE_KEYWORD_ATTRIBUTE)) {
-                    return true;
-                }
-
-                //  Mark only
-                checkUnsafe(base);
-
-                std::string name = base.getQualifiedNameAsString();
-
-                //bool 	isInAnonymousNamespace () const
-                if (name.find("(anonymous namespace)") != std::string::npos) {
-
-                    getDiag().Report(base.getLocation(), getDiag().getCustomDiagID(
-                            DiagnosticsEngine::Error,
-                            "Define classes in anonymous namespaces are not supported yet!"));
-                    return false;
-                }
-
-
-                static std::string list;
-                if (list.empty()) {
-                    for (auto &elem : attArgs) {
-
-                        if (!list.empty()) {
-                            list += "', '";
-                        }
-                        list += elem;
-                    }
-                    list.insert(0, "'");
-                    list += "'";
-                }
-
-                std::string first_attr;
-
-                if (attr->args_size() >= 1) {
-                    if (StringLiteral * str = dyn_cast_or_null<StringLiteral>(*attr->args_begin())) {
-                        first_attr = str->getString().str();
-                    } else {
-                        getDiag().Report(base.getLocation(), getDiag().getCustomDiagID(
-                                DiagnosticsEngine::Error, "First argument should be a string literal"));
-                    }
-                } else {
-
-                    getDiag().Report(base.getLocation(), getDiag().getCustomDiagID(
-                            DiagnosticsEngine::Error, "Expects string argument"));
-                }
-
-                std::set<std::string>::iterator found = attArgs.end();
-
-                //                if (first_attr.compare(defineArg) == 0) {
-                //                    found = attArgs.find(first_attr);
-                //                } else if (attr->args_size() == 2) {
-                //                }
-                //
-                //                if (found == attArgs.end()) {
-                //                    clang::DiagnosticBuilder DB = Instance.getDiagnostics().Report(base.getLocation(), Instance.getDiagnostics().getCustomDiagID(
-                //                            DiagnosticsEngine::Error,
-                //                            "Unknown argument '%0'. Expected string argument from the following list: %1"));
-                //                    DB.AddString(str->getString().str());
-                //                    DB.AddString(list);
-                //                }
-                //
-                //                if (StringLiteral * str = dyn_cast_or_null<StringLiteral>(*attr->args_begin())) {
-                //
-                //                    auto found = attArgs.find(str->getString().str());
-                //                    if (found == attArgs.end()) {
-                //                        clang::DiagnosticBuilder DB = Instance.getDiagnostics().Report(base.getLocation(), Instance.getDiagnostics().getCustomDiagID(
-                //                                DiagnosticsEngine::Error,
-                //                                "Unknown argument '%0'. Expected string argument from the following list: %1"));
-                //                        DB.AddString(str->getString().str());
-                //                        DB.AddString(list);
-                //                    }
-                //
-                //                    appendDecl(base, str->getString().str());
-                //
-                //                }
-
-            }
-
-            return true;
-        }
-
-        std::string GetFullTypeName(ASTContext &Ctx, QualType QT) {
-            PrintingPolicy Policy(Ctx.getPrintingPolicy());
-            Policy.SuppressScope = true;
-            Policy.AnonymousTagLocations = true;
-
-            return QT.getAsString(Policy);
+            return nullptr;
         }
 
         const Expr * removeTempExpr(const Expr * expr) {
             if (expr && (isa<ImplicitCastExpr>(expr) || isa<ExprWithCleanups>(expr) || isa<CXXBindTemporaryExpr>(expr))) {
-
                 return expr->IgnoreUnlessSpelledInSource();
             }
             return expr;
         }
 
         const Expr * getExprInitializer(const VarDecl & var) {
-            //    CXXConstructExpr
-            //    ImplicitCastExpr
-            //            CXXMemberCallExpr
-            //    ExprWithCleanups
-            //            CXXBindTemporaryExpr
-            //                    CXXMemberCallExpr
 
             const Expr * result = removeTempExpr(var.getAnyInitializer());
 
@@ -1523,7 +1184,7 @@ next_parent:
                 return nullptr;
             }
 
-            if (isa<CXXMemberCallExpr>(result) || isa<CXXConstructExpr>(result) || isa<UnaryOperator>(result)) {
+            if (isa<DeclRefExpr>(result) || isa<CXXMemberCallExpr>(result) || isa<CXXConstructExpr>(result) || isa<UnaryOperator>(result)) {
                 return result;
             }
 
@@ -1534,205 +1195,139 @@ next_parent:
 
         }
 
-        bool checkVarDecl(const VarDecl * var) {
+        /*
+         * 
+         * RecursiveASTVisitor template methods Visit... for analyzing source code based on the created context
+         * 
+         * 
+         */
 
-            if (!var) {
-                return false;
+        bool VisitDeclRefExpr(const DeclRefExpr * ref) {
+            if (isEnabled() && !ref->getDecl()->isFunctionOrFunctionTemplate()) {
+
+                std::string ref_name = ref->getDecl()->getNameAsString();
+                std::string caller = LifeTimeScope::getName(m_scopes.back().scope);
+
+                //                llvm::outs() << "VisitDeclRefExpr: " << ref_name << "  " << caller << "\n";
+                //                llvm::outs() << static_cast<int> (LifeTimeScope::testMode(m_scopes.back().scope)) << "\n\n\n\n";
+
+                //                llvm::outs() << m_scopes.Dump(ref->getLocation(), "");
+
+                SourceLocation cur_location = ref->getLocation();
+
+                clang::Expr::Classification cls = ref->ClassifyModifiable(m_CI.getASTContext(), cur_location);
+                //                Expr::isModifiableLvalueResult mod = ref->isModifiableLvalue(m_CI.getSourceManager(), ref->getLocation());
+                //                llvm::outs() << "isModifiable(): " << cls.getModifiable() << "\n";
+
+
+                auto found = m_scopes.findBlocker(ref_name);
+                if (found != LifeTime::BlockerEnd) {
+                    if (!found->second.empty() && found->second.front() == cur_location) {
+                        // First use -> clear source location
+                        found->second.clear();
+
+                    } else {
+
+                        LifeTimeScope::ModifyMode mode = LifeTimeScope::testMode(m_scopes.back().scope);
+
+                        if (mode == LifeTimeScope::ModifyMode::CONST_ONLY) {
+
+                            LogMessage(cur_location, std::format("Only constant method '{}' does not change data.", caller));
+                            return true;
+
+                        } else if (mode == LifeTimeScope::ModifyMode::EDIT_ONLY) {
+
+                            LogMessage(cur_location, std::format("Only non constant method '{}' alway changed data.", caller));
+                            found->second.push_back(cur_location);
+
+                        } else if (mode == LifeTimeScope::ModifyMode::BOTH_MODE) {
+
+                            if (m_level_non_const_method < clang::DiagnosticsEngine::Level::Warning) {
+                                LogMessage(cur_location, std::format("Both methods '{}' for constant and non-constant objects tracking disabled!", caller));
+                                return true;
+                            } else if (m_level_non_const_method == clang::DiagnosticsEngine::Level::Warning) {
+                                LogMessage(cur_location, std::format("Both methods '{}' for constant and non-constant objects warning only!", caller));
+                                FIXIT_DIAG(cur_location, "Both methods '{}' for constant and non-constant objects warning only!", "warning");
+                                return true;
+                            } else if (m_level_non_const_method > clang::DiagnosticsEngine::Level::Warning) {
+                                LogMessage(cur_location, std::format("Both methods '{}' for constant and non-constant objects tracking enabled!", caller));
+                                // FIXIT_DIAG(ref->getLocation(), "Both methods '{}' for constant and non-constant objects tracking enabled!", "warning");
+                                found->second.push_back(cur_location);
+                                return true;
+                            }
+                        }
+                    }
+                }
+
+                auto depend_found = m_scopes.findDependent(ref_name);
+                if (depend_found != LifeTime::DependentEnd) {
+
+
+                    std::string caller = LifeTimeScope::getName(m_scopes.back().scope);
+                    LifeTimeScope::ModifyMode mode = LifeTimeScope::testMode(m_scopes.back().scope);
+
+                    // llvm::outs() << "VisitDeclRefExpr: " << ref_name << "  " << caller << "\n";
+                    // llvm::outs() << static_cast<int> (LifeTimeScope::testMode(m_scopes.back().scope)) << "\n\n";
+
+                    auto block_found = m_scopes.findBlocker(depend_found->second);
+                    if (block_found != LifeTime::BlockerEnd) {
+
+                        //                        llvm::outs() << "check: " << m_scopes.getCalleeName() << "\n";
+                        //                        llvm::outs() << m_scopes.Dump(ref->getLocation(), "");
+
+                        if (!caller.empty()) {
+                            if (m_list_inval_func.find(caller) != m_list_inval_func.end()) {
+                                LogMessage(ref->getLocation(), std::format("Call {} '{}'", MEMSAFE_KEYWORD_INVALIDATE_FUNC, caller));
+                            } else {
+                                caller.clear();
+                            }
+                        }
+
+                        if (block_found->second.empty()) {
+                            LogMessage(ref->getLocation(), std::format("Depended {} corrected!", ref_name));
+                        } else {
+
+                            for (auto &elem : block_found->second) {
+                                llvm::outs() << elem.printToString(m_CI.getSourceManager()) << ": using main variable '" << block_found->first << "'\n";
+                            }
+
+                            FIXIT_ERROR(ref->getLocation(), "Using the dependent variable after changing the main variable!", "error", block_found->second.back().printToString(m_CI.getSourceManager()));
+                            LogError(ref->getLocation(), std::format("Using the dependent variable '{}' after changing the main variable '{}'!", block_found->first, ref_name));
+                        }
+                    }
+                }
+
             }
-
-
-            //VarDecl 0x7dca4a5eb838 <_example.cpp:13:13, col:35> col:18 used beg 'iterator':'__gnu_cxx::__normal_iterator<int *, std::vector<int>>' cinit
-            //`-CXXMemberCallExpr 0x7dca4a5f1700 <col:24, col:35> 'iterator':'__gnu_cxx::__normal_iterator<int *, std::vector<int>>'
-            //  `-MemberExpr 0x7dca4a5eb920 <col:24, col:29> '<bound member function type>' .begin 0x7dca4a5c86e0
-            //    `-DeclRefExpr 0x7dca4a5eb8a0 <col:24> 'std::vector<int>' lvalue Var 0x7dca49e02940 'vect' 'std::vector<int>'            
-
-            //VarDecl 0x7cdce3767838 <_example.cpp:13:13, col:41> col:24 used beg 'const iterator':'const __gnu_cxx::__normal_iterator<int *, std::vector<int>>' cinit
-            //`-ImplicitCastExpr 0x7cdce376d810 <col:30, col:41> 'const iterator':'const __gnu_cxx::__normal_iterator<int *, std::vector<int>>' <NoOp>
-            //  `-CXXMemberCallExpr 0x7cdce376d700 <col:30, col:41> 'iterator':'__gnu_cxx::__normal_iterator<int *, std::vector<int>>'
-            //    `-MemberExpr 0x7cdce3767920 <col:30, col:35> '<bound member function type>' .begin 0x7cdce37446e0
-            //      `-DeclRefExpr 0x7cdce37678a0 <col:30> 'std::vector<int>' lvalue Var 0x7cdce2f14940 'vect' 'std::vector<int>'
-
-            //VarDecl 0x717227bfcd68 <_example.cpp:15:13, col:44> col:24 end_const 'const reverse_iterator':'const std::reverse_iterator<__gnu_cxx::__normal_iterator<int *, std::vector<int>>>' callinit
-            //`-ImplicitCastExpr 0x7172271ef1a0 <col:34, col:44> 'const reverse_iterator':'const std::reverse_iterator<__gnu_cxx::__normal_iterator<int *, std::vector<int>>>' <NoOp>
-            //  `-CXXMemberCallExpr 0x7172271ef078 <col:34, col:44> 'reverse_iterator':'std::reverse_iterator<__gnu_cxx::__normal_iterator<int *, std::vector<int>>>'
-            //    `-MemberExpr 0x717227bfce50 <col:34, col:39> '<bound member function type>' .rend 0x717227bc9580
-            //      `-DeclRefExpr 0x717227bfcdd0 <col:34> 'std::vector<int>' lvalue Var 0x717227434d90 'vect' 'std::vector<int>'
-
-
-
-            const Type * type_ptr = var->getType().getTypePtrOrNull();
-
-            const Expr * init = getExprInitializer(*var);
-            if (init) {
-                type_ptr = init->getType().getTypePtrOrNull();
-            } else {
-                type_ptr = var->getType().getTypePtrOrNull();
-            }
-            std::string type_name = getCXXTypeName(type_ptr);
-
-            if (type_ptr) {
-                type_name = getCXXTypeName(type_ptr);
-                //
-                //                if (const CXXRecordDecl * decl = type_ptr->getAsCXXRecordDecl()) { // Only C++ classes are checked
-                //
-                //                    llvm::raw_string_ostream name(type_name);
-                //                    decl->printQualifiedName(name);
-                //                }
-
-            } else {
-                FIXIT_DIAG(var->getLocation(), "Unknown VarDecl type", "unknown");
-                var->dumpColor();
-            }
-
-
-            std::string var_name = var->getNameAsString();
-            const char * found_type = checkClassName(type_name);
-
-            if (!found_type) {
-                m_varOther.emplace(var_name);
-                return true;
-            }
-
-
-            /*
-             * SD_FullExpression 	Full-expression storage duration (for temporaries).
-             * SD_Automatic 	Automatic storage duration (most local variables).
-             * 
-             * SD_Thread 	Thread storage duration.
-             * SD_Static 	Static storage duration.
-             * 
-             * SD_Dynamic 	Dynamic storage duration. 
-             */
-
-            if (AUTO == found_type && var->getStorageDuration() == SD_Static) {
-                FIXIT_ERROR(var->getLocation(), "Create auto variabe as static", "error");
-                //            } else if (INVAL == found_type) {
-                //
-                //                FIXIT_DIAG(var->getLocation(), "Iterator found", MEMSAFE_KEYWORD_APPROVED);
-                //
-                //                if (const CXXMemberCallExpr * calle = dyn_cast_or_null<CXXMemberCallExpr>(init)) {
-                //
-                //                    calle->getImplicitObjectArgument()->dumpColor();
-                //
-                //                    if (const DeclRefExpr * dre = dyn_cast<DeclRefExpr>(calle->getImplicitObjectArgument()->IgnoreUnlessSpelledInSource())) {
-                //
-                //                        std::string decl_name = dre->getDecl()->getNameAsString();
-                //
-                //                        /* var_name - итератор объекта из переменной decl_name
-                //                         * итератор можно использовать пока не будет изменена исходная переменная
-                //                         * или вызов не константного метода.
-                //                         * 
-                //                         * Первое изменение к decl_name устанавливает SourceLocation,
-                //                         * и после этого любая попытка обратиться итератору var_name 
-                //                         * будет приводить к ошибке.
-                //                         */
-                //
-                //                        m_iter_depend.emplace(var_name, decl_name);
-                //                        m_iter_stoper.emplace(decl_name, SourceLocation());
-                //
-                //                        decl_name += " >> ";
-                //                        decl_name += var_name;
-                //
-                //                        FIXIT_DIAG(var->getLocation(), "Depended variables", "depend", decl_name);
-                //                    }
-                //                }
-
-            } else {
-
-                FIXIT_DIAG(var->getLocation(), "Variable found", MEMSAFE_KEYWORD_APPROVED);
-
-                VarInfo::DeclType parent_name = std::monostate();
-                int level = 0;
-
-                parent_name = findParenName(m_CI.getASTContext().getParents(*var), level);
-
-                AddVariable(*var, found_type, level, parent_name);
-            }
-
-            //            llvm::outs() << type_name << "  " << var_name << "\n\n\n";
-            //            var->dumpColor();
-
-            return true;
-
-            //            //hasAutomaticStorageDuration()
-            //            //hasGlobalStorage()
-            //            //hasThreadStorageDuration()
-            //
-            //
-            //            //            // Mark only                
-            //            //            checkUnsafe(*var);
-            //
-            //            VarInfo::DeclType parent_name = std::monostate();
-            //            int level = 0;
-            //
-            //            // llvm::outs() << "\nclang::DynTypedNodeList NodeList = Result.Context->getParents(*var)\n";
-            //
-            //
-            //
-            //            parent_name = findParenName(Instance.getASTContext().getParents(*var), level);
-            //            if (var->getStorageDuration() == SD_Static) {
-            //                if (std::string_view(MemSafeOptions::AUTO).compare(found_type) == 0) {
-            //                    FIXIT_ERROR(var->getLocation(), "Create auto variabe as static", "error");
-            //                }
-            //            }
-            //
-            //            //            AddVariable(*var, found_type, level, parent_name);
-            //            //            FIXIT_DIAG(var->getLocation(), "Create variable", found_type, level, parent_name);
-            //
             return true;
         }
 
+        bool VisitReturnStmt(const ReturnStmt *ret) {
 
-        //        std::vector<int> vect;
-        //        auto iter = vect.begin();
-        //        auto refff = &vect;        
+            if (isEnabled() && ret) {
 
-        //VarDecl 0x5b081865fa60 </home/rsashka/SOURCE/memsafe/_example.cpp:16:9, col:26> col:26 used vect 'std::vector<int>' callinit destroyed
-        //`-CXXConstructExpr 0x5b081868bb18 <col:26> 'std::vector<int>' 'void () noexcept'
-        //
-        //VarDecl 0x5b081868bbb0 </home/rsashka/SOURCE/memsafe/_example.cpp:17:9, col:32> col:14 iter 'iterator':'__gnu_cxx::__normal_iterator<int *, std::vector<int>>' cinit
-        //`-CXXMemberCallExpr 0x5b081868bcc8 <col:21, col:32> 'iterator':'__gnu_cxx::__normal_iterator<int *, std::vector<int>>'
-        //  `-MemberExpr 0x5b081868bc98 <col:21, col:26> '<bound member function type>' .begin 0x5b0818678f38
-        //    `-DeclRefExpr 0x5b081868bc18 <col:21> 'std::vector<int>' lvalue Var 0x5b081865fa60 'vect' 'std::vector<int>'
-        //
-        //
-        //VarDecl 0x5b081868f530 </home/rsashka/SOURCE/memsafe/_example.cpp:18:9, col:23> col:14 refff 'std::vector<int> *' cinit
-        //`-UnaryOperator 0x5b081868f5b8 <col:22, col:23> 'std::vector<int> *' prefix '&' cannot overflow
-        //  `-DeclRefExpr 0x5b081868f598 <col:23> 'std::vector<int>' lvalue Var 0x5b081865fa60 'vect' 'std::vector<int>'
-
-        bool checkReturnStmt(const ReturnStmt & ret) {
-
-
-            if (const ExprWithCleanups * inplace = dyn_cast_or_null<ExprWithCleanups>(ret.getRetValue())) {
-                FIXIT_DIAG(inplace->getBeginLoc(), "Return inplace", MEMSAFE_KEYWORD_APPROVED);
-                return true;
-            }
-
-            if (const CXXConstructExpr * expr = dyn_cast_or_null<CXXConstructExpr>(ret.getRetValue())) {
-
-
-                const char * found_type = checkClassName(expr->getType().getAsString());
-                if (!found_type) {
+                if (const ExprWithCleanups * inplace = dyn_cast_or_null<ExprWithCleanups>(ret->getRetValue())) {
+                    FIXIT_DIAG(inplace->getBeginLoc(), "Return inplace", MEMSAFE_KEYWORD_APPROVED);
                     return true;
                 }
 
-                if (std::string_view(AUTO).compare(found_type) == 0) {
-                    FIXIT_ERROR(ret.getRetValue()->getExprLoc(), "Return auto type", "error");
-                    return true;
-                } else if (std::string_view(SHARED).compare(found_type) == 0) {
-                    FIXIT_ERROR(ret.getRetValue()->getExprLoc(), "Return share type", "error");
+                if (const CXXConstructExpr * expr = dyn_cast_or_null<CXXConstructExpr>(ret->getRetValue())) {
 
-                    return true;
+                    const char * found_type = checkClassName(expr->getType().getAsString());
+
+                    if (found_type) {
+                        if (std::string_view(AUTO).compare(found_type) == 0) {
+                            FIXIT_ERROR(ret->getRetValue()->getExprLoc(), "Return auto type", "error");
+                        } else if (std::string_view(SHARED).compare(found_type) == 0) {
+
+                            FIXIT_ERROR(ret->getRetValue()->getExprLoc(), "Return share type", "error");
+                        }
+                    }
                 }
             }
             return true;
         }
 
-        bool checkUnaryOperator(const UnaryOperator * unary) {
-            if (!unary) {
-                return false;
-            }
-
+        bool VisitUnaryOperator(const UnaryOperator * unary) {
 
             if (unary->getOpcode() == UnaryOperator::Opcode::UO_AddrOf) {
 
@@ -1749,144 +1344,217 @@ next_parent:
                 //// [C++ Coroutines] co_await operator
                 //UNARY_OPERATION(Coawait, "co_await")
 
-                FIXIT_ERROR(unary->getOperatorLoc(), "Operator for address arithmetic", "error");
-                //                unary->dump();
+                //                llvm::outs() << "m_scopes.testInplaceCaller(): " << m_scopes.testInplaceCaller() << "\n";
+
+                if (m_scopes.testInplaceCaller()) {
+                    LogMessage(unary->getOperatorLoc(), "Inplace address arithmetic");
+                } else {
+
+                    FIXIT_ERROR(unary->getOperatorLoc(), "Operator for address arithmetic", "error");
+                    LogError(unary->getOperatorLoc(), "Operator for address arithmetic");
+                }
             }
 
             return true;
         }
-
-        //        ScopeLevel parseParmVarDecl(const FunctionDecl &func) {
-        //            ScopeLevel result({
-        //                {}, &func
-        //            });
-        //
-        //            for (unsigned i = 0; i < func.getNumParams(); i++) {
-        //                const ParmVarDecl * param = func.getParamDecl(i);
-        //                assert(param);
-        //                param->dump();
-        //                const clang::QualType type = param->getType();
-        //                result.vars.emplace(param->getQualifiedNameAsString(), DeclInfo{
-        //                    param, ""
-        //                });
-        //
-        //            }
-        //            return result;
-        //        }
 
         /*
          * 
+         * RecursiveASTVisitor Traverse... template methods for the created plugin context
          * 
          * 
          * 
          * 
          * 
+         */
+
+
+#define TRAVERSE_CONTEXT( name ) \
+        bool Traverse ## name (name * arg) { \
+            if (isEnabledStatus()) { \
+                m_scopes.PushScope(arg->getEndLoc(), arg); \
+                RecursiveASTVisitor<MemSafePlugin>::Traverse ## name (arg); \
+                m_scopes.PopScope(); \
+            } \
+            return true; \
+        }
+
+
+        TRAVERSE_CONTEXT(MemberExpr);
+
+        TRAVERSE_CONTEXT(CallExpr);
+        TRAVERSE_CONTEXT(CXXMemberCallExpr);
+        TRAVERSE_CONTEXT(CXXOperatorCallExpr);
+        TRAVERSE_CONTEXT(CXXTemporaryObjectExpr);
+
+        /*
+         * 
+         * Creating a plugin context based on a variable type
          *  
          */
 
-        //VarDecl 0x5de70866d140 </home/rsashka/SOURCE/memsafe/_example.cpp:15:9, col:23> col:14 invalid refff 'auto' cinit
-        //`-UnaryOperator 0x5de70866d1c8 <col:22, col:23> '<dependent type>' contains-errors prefix '&' cannot overflow
-        //  `-RecoveryExpr 0x5de70866d1a8 <col:23> '<dependent type>' contains-errors lvalue
-
-        bool TraverseDecl(Decl * D) {
-
-            checkDumpFilter(D);
-
-            if (checkDeclAttributes(dyn_cast_or_null<EmptyDecl>(D))) {
-
-            } else if (const NamespaceDecl * ns = dyn_cast_or_null<NamespaceDecl>(D)) {
-
-                checkDeclAttributes(ns);
-
-            } else if (const FunctionDecl * func = dyn_cast_or_null<FunctionDecl>(D)) {
-
-                if (isEnabled()) {
-
-                    llvm::outs() << "Enter FunctionDecl: ";
-                    llvm::outs() << func->getNameAsString() << "\n";
-
-                    //                m_scopes.push_back(parseParmVarDecl(*func));
-
-                    m_scopes.push_back(ScopeLevel(func));
-
-                    RecursiveASTVisitor<MemSafePlugin>::TraverseDecl(D);
-
-                    //                m_scopes.pop_back();
-                    m_scopes.pop_back();
-                    llvm::outs() << "Exit FunctionDecl\n";
-                    return true;
-                }
-
-            }
-
+        bool TraverseVarDecl(VarDecl * var) {
 
             if (isEnabled()) {
 
-                if (const VarDecl * decl = dyn_cast_or_null<VarDecl>(D)) {
+                // The type (class) of the variable that the plugin should analyze
+                const char * found_type = checkClassNameTracking(var->getType()->getAsCXXRecordDecl());
 
-                    m_decl.push_back(decl);
+                // The name of the variable
+                std::string var_name = var->getNameAsString();
 
-                    checkVarDecl(decl);
+                // llvm::outs() << "TraverseVarDecl: " << var_name << " -> " << found_type << "\n";
+                // type_ptr->dump();
 
-                    RecursiveASTVisitor<MemSafePlugin>::TraverseDecl(D);
+                if (!found_type) {
 
-                    m_decl.pop_back();
-                    return true;
+                    // The type (class) of the variable does not require analysis
+                    m_scopes.back().other.emplace(var_name);
 
-                } else if (const CXXRecordDecl * base = dyn_cast_or_null<CXXRecordDecl>(D)) {
-                    checkCXXRecordDecl(*base);
+                } else if (INVAL_TYPE == found_type) {
+
+                    // The type (class) of a reference type variable depends on the data 
+                    // and may become invalid if the original data changes.
+
+
+                    // FIXIT_DIAG(var->getLocation(), "Iterator found", MEMSAFE_KEYWORD_APPROVED);
+
+
+                    const DeclRefExpr * dre = nullptr;
+
+                    if (Expr * init = var->getInit()) {
+                        dre = dyn_cast<DeclRefExpr>(init->IgnoreUnlessSpelledInSource()->IgnoreImplicit());
+                    }
+
+                    if (!dre) {
+                        dre = getInitializer(*var);
+                    }
+
+                    if (dre) {
+
+                        std::string depend_name = dre->getDecl()->getNameAsString();
+
+                        /* var_name is a reference type from the variable depend_name.
+                         * 
+                         * var_name can be used until the original variable depend_name is changed
+                         * or it has a non-const method call that changes its internal state.
+                         *
+                         * The first use depend_name sets SourceLocation from the current position, 
+                         * so that it is cleared in the first call to VisitDeclRefExpr.
+                         * 
+                         * After that, any attempt to access var_name will result in an error.
+                         */
+
+                        m_scopes.back().dependent.emplace(var_name, depend_name);
+                        m_scopes.back().blocker.emplace(depend_name, std::vector<SourceLocation>({dre->getLocation()}));
+
+                        // llvm::outs() << dre->getLocation().printToString(m_CI.getSourceManager()) << "\n";
+                        // depend_name += "=>";
+                        // depend_name += var_name;
+
+                        LogMessage(var->getLocation(), std::format("{}:{}=>{}", var_name, found_type, depend_name));
+
+                    } else {
+
+                        FIXIT_ERROR(var->getLocation(), "Unknown depended type", "depend");
+                        LogError(var->getLocation(), std::format("Unknown depended type {}:{}", var_name, found_type));
+                    }
+
+                } else {
+
+                    // The remaining types (classes) are used for safe memory management.
+                    m_scopes.AddVarDecl(var, found_type);
+
+                    /*
+                     * SD_FullExpression 	Full-expression storage duration (for temporaries).
+                     * SD_Automatic 	Automatic storage duration (most local variables).
+                     * 
+                     * SD_Thread 	Thread storage duration.
+                     * SD_Static 	Static storage duration.
+                     * 
+                     * SD_Dynamic 	Dynamic storage duration. 
+                     */
+                    if (AUTO == found_type && var->getStorageDuration() == SD_Static) {
+                        FIXIT_ERROR(var->getLocation(), "Create auto variabe as static", "error");
+                        LogError(var->getLocation(), std::format("Create auto variabe as static {}:{}", var_name, found_type));
+                    } else {
+
+                        LogMessage(var->getLocation(), std::format("Var found {}:{}", var_name, found_type));
+                    }
                 }
-
             }
 
-
-            RecursiveASTVisitor<MemSafePlugin>::TraverseDecl(D);
-
-            return true;
+            return RecursiveASTVisitor<MemSafePlugin>::TraverseVarDecl(var);
         }
 
+        /*
+         * Traversing statements in AST
+         */
         bool TraverseStmt(Stmt * stmt) {
+
+            // Enabling and disabling planig is implemented via declarations, 
+            // so statements are processed only after the plugin is activated.
             if (isEnabledStatus()) {
 
-
+                // Check for dump AST tree
                 if (const DeclStmt * decl = dyn_cast_or_null<DeclStmt>(stmt)) {
                     checkDumpFilter(decl->getSingleDecl());
                 }
                 printDumpIfEnabled(stmt);
 
 
-                if (const CompoundStmt * block = dyn_cast_or_null<CompoundStmt>(stmt)) {
+                const AttributedStmt * attrStmt = dyn_cast_or_null<AttributedStmt>(stmt);
+                const CompoundStmt * block = dyn_cast_or_null<CompoundStmt>(stmt);
 
-                    m_level.push_back(block);
-                    m_scopes.push_back(ScopeLevel());
-                    //                checkFunctionDecl(*func);
-                    //ParmVarDecl
+                if (attrStmt || block) {
+
+
+                    m_scopes.PushScope(stmt->getEndLoc(), std::monostate(), checkUnsafeBlock(attrStmt));
 
                     RecursiveASTVisitor<MemSafePlugin>::TraverseStmt(stmt);
 
-                    m_scopes.pop_back();
-                    m_level.pop_back();
+                    m_scopes.PopScope();
+
                     return true;
 
-                    //                } else if (checkUnaryOperator(dyn_cast_or_null<UnaryOperator>(stmt))) {
                 }
 
-                //                if (const CXXOperatorCallExpr * assign = dyn_cast_or_null<CXXOperatorCallExpr>(stmt)) {
-                //                    checkCXXOperatorCallExpr(*assign);
-                //                } else if (const CallExpr * call = dyn_cast_or_null<CallExpr>(stmt)) {
-                //                    checkCallExpr(*call);
-                //                } else if (const ReturnStmt * ret = dyn_cast_or_null<ReturnStmt>(stmt)) {
-                //
-                //                    checkReturnStmt(*ret);
-                //                    //                } else if (stmt) {
-                //                    //                    // stmt->dumpColor();
-                //                }
-
+                // Recursive traversal of statements only when the plugin is enabled
                 RecursiveASTVisitor<MemSafePlugin>::TraverseStmt(stmt);
             }
+
             return true;
         }
 
+        /*
+         * All AST analysis starts with TraverseDecl
+         * 
+         */
+        bool TraverseDecl(Decl * D) {
+
+            checkDumpFilter(D);
+            checkDeclAttributes(D);
+
+            if (const FunctionDecl * func = dyn_cast_or_null<FunctionDecl>(D)) {
+
+                if (isEnabled() && func->isDefined()) {
+
+                    m_scopes.PushScope(D->getLocation(), func, m_scopes.testUnsafe());
+
+                    RecursiveASTVisitor<MemSafePlugin>::TraverseDecl(D);
+
+                    m_scopes.PopScope();
+                    return true;
+                }
+
+            }
+
+            // Enabling and disabling the plugin is implemented using declarations, 
+            // so declarations are always processed.
+            RecursiveASTVisitor<MemSafePlugin>::TraverseDecl(D);
+
+            return true;
+        }
 
     };
 
@@ -1931,13 +1599,19 @@ next_parent:
             context.getParentMapContext().setTraversalKind(clang::TraversalKind::TK_IgnoreUnlessSpelledInSource);
             plugin->TraverseDecl(context.getTranslationUnitDecl());
 
+
+            if (logger) {
+                llvm::outs() << "\nLogger output:\n";
+                logger->Dump(llvm::outs());
+
+                llvm::outs() << "\n";
+                plugin->dump();
+            }
+
             if (Rewriter) {
 
                 Rewriter->WriteFixedFiles();
             }
-
-            llvm::outs() << "\n\n\ndump();\n";
-            plugin->dump();
 
         }
     };
@@ -1965,6 +1639,14 @@ next_parent:
             return obj;
         }
 
+        template <class... Args>
+        void PrintColor(raw_ostream & out, std::format_string<Args...> fmt, Args&&... args) {
+
+            out << "\033[1;46;34m";
+            out << std::format(fmt, args...);
+            out << "\033[0m\n";
+        }
+
         bool ParseArgs(const CompilerInstance &CI, const std::vector<std::string> &args) override {
 
             plugin = std::unique_ptr<MemSafePlugin>(new MemSafePlugin(CI));
@@ -1989,26 +1671,38 @@ next_parent:
 
                 if (!message.empty()) {
                     if (first.compare("fixit") == 0) {
+
                         fixit_file_ext = second;
                         if (fixit_file_ext.empty()) {
-                            llvm::errs() << "To enable FixIt output to a file, you must specify the extension of the file being created!";
+                            llvm::errs() << "To enable FixIt output to a file, you must specify the extension of the file being created!\n";
                             return false;
                         }
                         if (fixit_file_ext[0] != '.') {
                             fixit_file_ext.insert(0, ".");
                         }
-                        llvm::outs() << "\033[1;46;34mEnabled FixIt output to a file with the extension: '" << fixit_file_ext << "'\033[0m\n";
+                        PrintColor(llvm::outs(), "Enabled FixIt output to a file with the extension: '{}'", fixit_file_ext);
+
                     } else if (first.compare("marker") == 0) {
+
                         if (second.empty()) {
-                            llvm::errs() << "Debug trace marker cannot be empty!";
+                            llvm::errs() << "Debug trace marker cannot be empty!\n";
                             return false;
                         }
                         m_marker = second;
-                        llvm::outs() << "\033[1;46;34mUsing debug trace marker: '" << fixit_file_ext << "'\033[0m\n";
+                        PrintColor(llvm::outs(), "Using debug trace marker: '{}'", m_marker);
+
+                    } else if (first.compare("log") == 0) {
+
+                        logger = std::unique_ptr<MemSafeLogger>(new MemSafeLogger(CI));
+                        PrintColor(llvm::outs(), "Enable dump and process logger");
+
                     } else {
-                        llvm::errs() << "Unknown plugin argument: '" << elem << "'!";
+                        llvm::errs() << "Unknown plugin argument: '" << elem << "'!\n";
                         return false;
                     }
+                } else {
+                    llvm::errs() << "The argument '" << elem << "' is not supported via command line!\n";
+                    return false;
                 }
             }
 

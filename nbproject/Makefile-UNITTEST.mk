@@ -14,14 +14,14 @@ GREP=grep
 NM=nm
 CCADMIN=CCadmin
 RANLIB=ranlib
-CC=clang-19
-CCC=clang++-19
-CXX=clang++-19
+CC=clang-20
+CCC=clang++-20
+CXX=clang++-20
 FC=gfortran
-AS=lld-19
+AS=lld-20
 
 # Macros
-CND_PLATFORM=CLang-19-Linux
+CND_PLATFORM=CLang-20-Linux
 CND_DLIB_EXT=so
 CND_CONF=UNITTEST
 CND_DISTDIR=dist
@@ -66,11 +66,11 @@ ${CND_DISTDIR}/${CND_CONF}/${CND_PLATFORM}/memsafe: ${OBJECTFILES}
 ${OBJECTDIR}/_example.o: _example.cpp memsafe_clang.so nbproject/Makefile-${CND_CONF}.mk
 	${MKDIR} -p ${OBJECTDIR}
 	${RM} "$@.d"
-	$(COMPILE.cc) -g -DBUILD_UNITTEST -I. -std=c++20 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -Xclang -plugin-arg-memsafe -Xclang fixit=memsafe -MMD -MP -MF "$@.d" -o ${OBJECTDIR}/_example.o _example.cpp
+	$(COMPILE.cc) -g -DBUILD_UNITTEST -I. -std=c++26 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -Xclang -plugin-arg-memsafe -Xclang fixit=memsafe -Xclang -plugin-arg-memsafe -Xclang log -MMD -MP -MF "$@.d" -o ${OBJECTDIR}/_example.o _example.cpp
 
 memsafe_clang.so: memsafe_clang.cpp nbproject/Makefile-${CND_CONF}.mk
 	@echo "\033[1;46;34m"Building a plugin memsafe_clang.so"\033[0m"
-	clang-19 -fPIC -shared -o memsafe_clang.so memsafe_clang.cpp `llvm-config-19 --cppflags --ldflags --system-libs --libs all`
+	clang-20 -fPIC -shared -o memsafe_clang.so memsafe_clang.cpp `llvm-config-20 --cppflags --ldflags --system-libs --libs all` -std=c++20
 
 ${OBJECTDIR}/memsafe_test.o: memsafe_test.cpp memsafe_clang.so nbproject/Makefile-${CND_CONF}.mk
 	${MKDIR} -p ${OBJECTDIR}
