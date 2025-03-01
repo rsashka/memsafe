@@ -20,7 +20,6 @@
 #include "clang/ASTMatchers/ASTMatchers.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 
-#include "clang/Rewrite/Frontend/FixItRewriter.h"
 #include "clang/Lex/PreprocessorOptions.h"
 
 #pragma clang attribute push
@@ -89,8 +88,6 @@ namespace {
             auto found = m_attrs.find(loc);
             if (found == m_attrs.end()) {
                 Log(loc, "Attribute location not found!");
-                //            } else if (found->second) {
-                //                Log(loc, std::format("Error reprocessing attribute! {}", found->first.printToString(m_ci.getSourceManager())));
             } else {
                 found->second = true;
             }
@@ -106,6 +103,7 @@ namespace {
         }
 
         void Dump(raw_ostream & out) {
+            out << MEMSAFE_KEYWORD_START_LOG;
             for (auto &elem : m_logs) {
                 out << LocToStr(elem.first);
                 out << ": " << elem.second << "\n";
@@ -196,42 +194,6 @@ namespace {
             return AttributeNotApplied;
         }
 
-    };
-
-    /* 
-     * 
-     * 
-     * https://www.goldsborough.me/c++/clang/llvm/tools/2017/02/24/00-00-06-emitting_diagnostics_and_fixithints_in_clang_tools/
-     * 
-     */
-
-    class FixItRewriterOptions : public clang::FixItOptions {
-    public:
-
-        using super = clang::FixItOptions;
-
-        // Constructor.
-        //
-        // The \p RewriteSuffix is the option from the command line.
-
-        explicit FixItRewriterOptions(const std::string& RewriteSuffix = "")
-        : RewriteSuffix(RewriteSuffix) {
-
-            super::InPlace = false; //  True if files should be updated in place.
-            super::FixWhatYouCan = false; // Whether to abort fixing a file when not all errors could be fixed.
-            super::FixOnlyWarnings = false; // Whether to only fix warnings and not errors.
-            super::Silent = true; // If true, only pass the diagnostic to the actual diagnostic consumer if it is an error or a fixit was applied as part of the diagnost
-        }
-
-        std::string RewriteFilename(const std::string& Filename, int& fd) override {
-            fd = -1;
-
-            return Filename + RewriteSuffix;
-        }
-
-    public:
-        // The suffix appended to rewritten files.
-        std::string RewriteSuffix;
     };
 
     /*
@@ -397,6 +359,26 @@ namespace {
             return "";
         }
 
+        const char * findVariable(std::string_view name, int &level) {
+            if (name.empty()) {
+                return "";
+            }
+            auto iter = rbegin();
+            while (iter != rend()) {
+                auto found_var = iter->vars.find(name.begin());
+                if (found_var != iter->vars.end()) {
+                    level = std::distance(iter, rend());
+                    return found_var->second.type;
+                }
+                auto found_other = iter->other.find(name.begin());
+                if (found_other != iter->other.end()) {
+                    return "";
+                }
+                iter++;
+            }
+            return nullptr;
+        }
+
         std::string getCalleeName() {
             auto iter = rbegin();
             while (iter != rend()) {
@@ -465,7 +447,7 @@ namespace {
 
         std::string Dump(const SourceLocation &loc, std::string_view filter) {
 
-            std::string result("\n\n");
+            std::string result = MEMSAFE_KEYWORD_START_DUMP;
             if (loc.isValid()) {
                 if (loc.isMacroID()) {
                     result += m_CI.getSourceManager().getExpansionLoc(loc).printToString(m_CI.getSourceManager());
@@ -474,7 +456,6 @@ namespace {
                 }
                 result += ": ";
             }
-            result += "#print-dump ";
             if (!filter.empty()) {
                 //@todo Create Dump filter 
                 result += std::format(" filter '{}' not implemented!", filter.begin());
@@ -570,15 +551,18 @@ namespace {
 
     class MemSafePlugin : public RecursiveASTVisitor<MemSafePlugin> {
     public:
-        static inline const char * SHARED = MEMSAFE_KEYWORD_SHARED;
-        static inline const char * AUTO = MEMSAFE_KEYWORD_AUTO;
-        static inline const char * INVAL_TYPE = MEMSAFE_KEYWORD_INVALIDATE_TYPE;
-        static inline const char * INVAL_FUNC = MEMSAFE_KEYWORD_INVALIDATE_FUNC;
+        static inline const char * ERROR_TYPE = MEMSAFE_KEYWORD_ERROR "-type";
+        static inline const char * WARNING_TYPE = MEMSAFE_KEYWORD_WARNING "-type";
+
+        static inline const char * AUTO_TYPE = MEMSAFE_KEYWORD_AUTO_TYPE;
+        static inline const char * SHARED_TYPE = MEMSAFE_KEYWORD_SHARED_TYPE;
+        static inline const char * POINTER_TYPE = MEMSAFE_KEYWORD_POINTER_TYPE;
+        static inline const char * INVALIDATE_FUNC = MEMSAFE_KEYWORD_INVALIDATE_FUNC;
 
         static inline const char * NONCONST_ARG = MEMSAFE_KEYWORD_NONCONST_ARG;
         static inline const char * NONCONST_METHOD = MEMSAFE_KEYWORD_NONCONST_METHOD;
 
-        static inline const std::set<std::string> attArgs{SHARED, AUTO, INVAL_TYPE, INVAL_FUNC, NONCONST_ARG, NONCONST_METHOD};
+        static inline const std::set<std::string> attArgs{SHARED_TYPE, AUTO_TYPE, POINTER_TYPE, INVALIDATE_FUNC, NONCONST_ARG, NONCONST_METHOD};
 
         std::map<std::string, std::string> m_clsUse;
 
@@ -603,7 +587,7 @@ namespace {
         static inline const char * STATUS_PUSH = MEMSAFE_KEYWORD_PUSH;
         static inline const char * STATUS_POP = MEMSAFE_KEYWORD_POP;
 
-        std::set<std::string> m_listFirstArg{PROFILE, UNSAFE, SHARED, AUTO, INVAL_TYPE, INVAL_FUNC, WARNING, ERROR, STATUS, BASELINE, NONCONST_ARG, NONCONST_METHOD, PRINT_AST, PRINT_DUMP};
+        std::set<std::string> m_listFirstArg{PROFILE, UNSAFE, SHARED_TYPE, AUTO_TYPE, POINTER_TYPE, INVALIDATE_FUNC, WARNING_TYPE, ERROR_TYPE, STATUS, BASELINE, NONCONST_ARG, NONCONST_METHOD, PRINT_AST, PRINT_DUMP};
         std::set<std::string> m_listStatus{STATUS_ENABLE, STATUS_DISABLE, STATUS_PUSH, STATUS_POP};
 
         /**
@@ -611,24 +595,24 @@ namespace {
          * (copying a variable does not copy the data,  only the reference 
          * and increments the ownership counter).
          */
-        std::set<std::string> m_type_shared;
+        std::set<std::string> m_shared_type;
         /**
          * List of base classes that contain strong pointers to data 
          * that can only be created in temporary variables 
          * (which are automatically deallocated when they go out of scope).
          */
-        std::set<std::string> m_type_auto;
+        std::set<std::string> m_auto_type;
         /**
          * List of base iterator types that must be tracked for strict control of dependent pointers.         
          */
-        std::set<std::string> m_list_inval_type;
+        std::set<std::string> m_pointer_type;
         /**
          * List of base iterator types that must be tracked for strict control of dependent pointers.         
          */
-        std::set<std::string> m_list_inval_func;
+        std::set<std::string> m_invalidate_func;
 
-        std::set<std::string> m_type_warning;
-        std::set<std::string> m_type_error;
+        std::set<std::string> m_warning_type;
+        std::set<std::string> m_error_type;
 
         std::vector<bool> m_status{false};
 
@@ -637,12 +621,10 @@ namespace {
         clang::DiagnosticsEngine::Level m_level_non_const_method;
 
         bool m_warning_only;
-        std::string m_prefix;
 
         static const inline std::pair<std::string, std::string> pair_empty{std::make_pair<std::string, std::string>("", "")};
 
 
-        bool is_fixit;
         int64_t line_base;
         int64_t line_number;
 
@@ -655,7 +637,7 @@ namespace {
         const CompilerInstance &m_CI;
 
         MemSafePlugin(const CompilerInstance &instance) :
-        m_CI(instance), m_scopes(instance), m_warning_only(false), m_prefix("##memsafe"), is_fixit(false), line_base(0), line_number(0) {
+        m_CI(instance), m_scopes(instance), m_warning_only(false), line_base(0), line_number(0) {
             // Zero level for static variables
             m_scopes.PushScope(SourceLocation(), std::monostate(), SourceLocation());
 
@@ -672,15 +654,28 @@ namespace {
             //            std::swap(*this, empty);
         }
 
-        void dump() {
-            llvm::outs() << "#memsafe-dump\n";
-            llvm::outs() << "#error: " << makeHelperString(m_type_error) << "\n";
-            llvm::outs() << "#warning: " << makeHelperString(m_type_warning) << "\n";
-            llvm::outs() << "#shared: " << makeHelperString(m_type_shared) << "\n";
-            llvm::outs() << "#auto: " << makeHelperString(m_type_auto) << "\n";
-            llvm::outs() << "#type: " << makeHelperString(m_list_inval_type) << "\n";
-            llvm::outs() << "#func: " << makeHelperString(m_list_inval_func) << "\n";
-            llvm::outs() << "\n";
+        void dump(raw_ostream & out) {
+            out << "\n#memsafe-config\n";
+            out << "error-type: " << makeHelperString(m_error_type) << "\n";
+            out << "warning-type: " << makeHelperString(m_warning_type) << "\n";
+            out << MEMSAFE_KEYWORD_AUTO_TYPE ": " << makeHelperString(m_auto_type) << "\n";
+            out << MEMSAFE_KEYWORD_SHARED_TYPE ": " << makeHelperString(m_shared_type) << "\n";
+            out << MEMSAFE_KEYWORD_POINTER_TYPE ": " << makeHelperString(m_pointer_type) << "\n";
+            out << MEMSAFE_KEYWORD_INVALIDATE_FUNC ": " << makeHelperString(m_invalidate_func) << "\n";
+            out << "\n";
+        }
+
+        clang::DiagnosticsEngine::Level getLevel(clang::DiagnosticsEngine::Level original) {
+            SourceLocation loc = m_scopes.testUnsafe();
+            if (loc.isValid()) {
+                return clang::DiagnosticsEngine::Level::Ignored;
+            }
+            if (!isEnabled()) {
+                return clang::DiagnosticsEngine::Level::Ignored;
+            } else if (original == clang::DiagnosticsEngine::Level::Error && m_warning_only) {
+                return clang::DiagnosticsEngine::Level::Warning;
+            }
+            return original;
         }
 
         std::string LogPos(const SourceLocation &loc) {
@@ -698,24 +693,24 @@ namespace {
             return "0";
         }
 
-        void LogViolation(SourceLocation loc, std::string str, SourceLocation hash = SourceLocation()) {
-
-
+        void LogOnly(SourceLocation loc, std::string str, SourceLocation hash = SourceLocation(), std::string prefix = "log") {
             if (logger) {
-                logger->Log(loc, std::format("#vio #{} {}", hash.isValid() ? LogPos(hash) : LogPos(loc), str));
+                logger->Log(loc, std::format("#{} #{} {}", prefix, hash.isValid() ? LogPos(hash) : LogPos(loc), str));
             }
         }
 
-        void LogMessage(SourceLocation loc, std::string str, SourceLocation hash = SourceLocation()) {
-            if (logger) {
-                logger->Log(loc, std::format("#msg #{} {}", hash.isValid() ? LogPos(hash) : LogPos(loc), str));
-            }
+        void LogWarning(SourceLocation loc, std::string str, SourceLocation hash = SourceLocation()) {
+            getDiag().Report(loc, getDiag().getCustomDiagID(
+                    getLevel(clang::DiagnosticsEngine::Warning), "%0"))
+                    .AddString(str);
+            LogOnly(loc, str, hash, "warn");
         }
 
         void LogError(SourceLocation loc, std::string str, SourceLocation hash = SourceLocation()) {
-            if (logger) {
-                logger->Log(loc, std::format("#err #{} {}", hash.isValid() ? LogPos(hash) : LogPos(loc), str));
-            }
+            getDiag().Report(loc, getDiag().getCustomDiagID(
+                    getLevel(clang::DiagnosticsEngine::Error), "%0"))
+                    .AddString(str);
+            LogOnly(loc, str, hash, "err");
         }
 
         static std::string makeHelperString(const std::set<std::string> &set) {
@@ -823,20 +818,18 @@ namespace {
                     if (!second.empty()) {
                         result = "Loading profile from file is not implemented!";
                     }
-                    //                } else if (first.compare(UNSAFE) == 0) {
-                    //                    m_listUnsafe.emplace(second.begin());
-                } else if (first.compare(ERROR) == 0) {
-                    m_type_error.emplace(second.begin());
-                } else if (first.compare(WARNING) == 0) {
-                    m_type_warning.emplace(second.begin());
-                } else if (first.compare(SHARED) == 0) {
-                    m_type_shared.emplace(second.begin());
-                } else if (first.compare(AUTO) == 0) {
-                    m_type_auto.emplace(second.begin());
-                } else if (first.compare(INVAL_TYPE) == 0) {
-                    m_list_inval_type.emplace(second.begin());
-                } else if (first.compare(INVAL_FUNC) == 0) {
-                    m_list_inval_func.emplace(second.begin());
+                } else if (first.compare(ERROR_TYPE) == 0) {
+                    m_error_type.emplace(second.begin());
+                } else if (first.compare(WARNING_TYPE) == 0) {
+                    m_warning_type.emplace(second.begin());
+                } else if (first.compare(SHARED_TYPE) == 0) {
+                    m_shared_type.emplace(second.begin());
+                } else if (first.compare(AUTO_TYPE) == 0) {
+                    m_auto_type.emplace(second.begin());
+                } else if (first.compare(POINTER_TYPE) == 0) {
+                    m_pointer_type.emplace(second.begin());
+                } else if (first.compare(INVALIDATE_FUNC) == 0) {
+                    m_invalidate_func.emplace(second.begin());
 
                 } else if (first.compare(NONCONST_ARG) == 0) {
                     if (!checkBehavior(second, &m_level_non_const_arg)) {
@@ -856,12 +849,12 @@ namespace {
          */
 
         const char * checkClassName(std::string_view type) {
-            if (m_type_auto.find(type.begin()) != m_type_auto.end()) {
-                return AUTO;
-            } else if (m_type_shared.find(type.begin()) != m_type_shared.end()) {
-                return SHARED;
-            } else if (m_list_inval_type.find(type.begin()) != m_list_inval_type.end()) {
-                return INVAL_TYPE;
+            if (m_auto_type.find(type.begin()) != m_auto_type.end()) {
+                return AUTO_TYPE;
+            } else if (m_shared_type.find(type.begin()) != m_shared_type.end()) {
+                return SHARED_TYPE;
+            } else if (m_pointer_type.find(type.begin()) != m_pointer_type.end()) {
+                return POINTER_TYPE;
             }
             return nullptr;
         }
@@ -896,7 +889,7 @@ namespace {
                                 logger->AttrComplete(elem->getLocation());
                             }
 
-                            LogMessage(attrStmt->getBeginLoc(), "Unsafe statement", attrStmt->getBeginLoc());
+                            LogOnly(attrStmt->getBeginLoc(), "Unsafe statement", attrStmt->getBeginLoc());
 
                             return elem->getLocation();
                         }
@@ -905,54 +898,6 @@ namespace {
                 }
             }
             return SourceLocation();
-        }
-
-        clang::DiagnosticsEngine::Level getLevel(clang::DiagnosticsEngine::Level original) {
-            SourceLocation loc = m_scopes.testUnsafe();
-            if (loc.isValid()) {
-                if (logger) {
-                    logger->AttrComplete(loc);
-                }
-                LogMessage(loc, "Unsafe statement");
-                return clang::DiagnosticsEngine::Level::Ignored;
-            }
-            if (!isEnabled()) {
-                return clang::DiagnosticsEngine::Level::Ignored;
-            } else if (original == clang::DiagnosticsEngine::Level::Error && m_warning_only) {
-                return clang::DiagnosticsEngine::Level::Warning;
-            }
-            return original;
-        }
-
-
-#define FIXIT_DIAG(location, remark, type, ... ) \
-            if(is_fixit){ m_CI.getDiagnostics().Report(location, m_CI.getDiagnostics().getCustomDiagID(getLevel(clang::DiagnosticsEngine::Remark), remark)).\
-                AddFixItHint(clang::FixItHint::CreateInsertion(location, MakeFixitMessage(type, remark, m_CI.getSourceManager().getSpellingLineNumber(location) __VA_OPT__(,) __VA_ARGS__)));}
-
-#define FIXIT_ERROR(location, remark, type, ... ) \
-            m_CI.getDiagnostics().Report(location, m_CI.getDiagnostics().getCustomDiagID(getLevel(clang::DiagnosticsEngine::Error), remark)).\
-                AddFixItHint(clang::FixItHint::CreateInsertion(location, MakeFixitMessage(type, remark, m_CI.getSourceManager().getSpellingLineNumber(location) __VA_OPT__(,) __VA_ARGS__)))
-
-        std::string MakeFixitMessage(const std::string_view type, const std::string_view remark, int64_t num, const std::string_view msg = "") {
-            std::string message("/* ");
-            message += m_prefix;
-            message += " #";
-            message += std::to_string(num - line_base + line_number);
-            //            message += " #";
-            //            message += std::to_string(line_base);
-            //            message += " #";
-            //            message += std::to_string(line_number);
-            message += " #";
-            message += type.begin();
-            message += " #";
-            message += remark.begin();
-
-            message += (msg.empty() ? "" : " ");
-            message += msg.begin();
-
-            message += " */ ";
-
-            return message;
         }
 
         std::pair<std::string, std::string> parseAttr(const AnnotateAttr * const attr) {
@@ -1001,7 +946,7 @@ namespace {
                             DiagnosticsEngine::Error, "Error detected: %0"));
                     DB.AddString(error_str);
 
-                    LogViolation(attr->getLocation(), error_str);
+                    LogError(attr->getLocation(), error_str);
 
                 } else if (attr_args.first.compare(BASELINE) == 0) {
                     try {
@@ -1012,9 +957,11 @@ namespace {
                         line_base = getDiag().getSourceManager().getSpellingLineNumber(loc);
                         line_number = std::stoi(attr_args.second);
 
-                        clang::DiagnosticBuilder DB = getDiag().Report(loc, getDiag().getCustomDiagID(
-                                DiagnosticsEngine::Note, "Mark baseline %0"));
-                        DB.AddString(std::to_string(line_number));
+                        if (logger) {
+                            clang::DiagnosticBuilder DB = getDiag().Report(loc, getDiag().getCustomDiagID(
+                                    DiagnosticsEngine::Note, "Mark baseline %0"));
+                            DB.AddString(std::to_string(line_number));
+                        }
 
                     } catch (...) {
                         getDiag().Report(decl->getLocation(), getDiag().getCustomDiagID(
@@ -1138,15 +1085,6 @@ namespace {
          * 
          */
 
-        std::string getCXXTypeName(const Type * type_ptr) {
-            std::string type_name;
-            if (const CXXRecordDecl * decl = type_ptr ? type_ptr->getAsCXXRecordDecl() : nullptr) { // Only C++ classes are checked
-                llvm::raw_string_ostream name(type_name);
-                decl->printQualifiedName(name);
-            }
-            return type_name;
-        }
-
         const char * checkClassNameTracking(const CXXRecordDecl * type) {
             const char * result = type ? checkClassName(type->getQualifiedNameAsString()) : nullptr;
             const CXXRecordDecl * cxx = dyn_cast_or_null<CXXRecordDecl>(type);
@@ -1188,7 +1126,7 @@ namespace {
                 return result;
             }
 
-            FIXIT_DIAG(var.getLocation(), "Unknown VarDecl initializer", "unknown");
+            LogError(var.getLocation(), "Unknown VarDecl initializer");
             var.getAnyInitializer()->dumpColor();
 
             return nullptr;
@@ -1207,11 +1145,6 @@ namespace {
 
                 std::string ref_name = ref->getDecl()->getNameAsString();
                 std::string caller = LifeTimeScope::getName(m_scopes.back().scope);
-
-                //                llvm::outs() << "VisitDeclRefExpr: " << ref_name << "  " << caller << "\n";
-                //                llvm::outs() << static_cast<int> (LifeTimeScope::testMode(m_scopes.back().scope)) << "\n\n\n\n";
-
-                //                llvm::outs() << m_scopes.Dump(ref->getLocation(), "");
 
                 SourceLocation cur_location = ref->getLocation();
 
@@ -1232,26 +1165,24 @@ namespace {
 
                         if (mode == LifeTimeScope::ModifyMode::CONST_ONLY) {
 
-                            LogMessage(cur_location, std::format("Only constant method '{}' does not change data.", caller));
+                            LogOnly(cur_location, std::format("Only constant method '{}' does not change data.", caller));
                             return true;
 
                         } else if (mode == LifeTimeScope::ModifyMode::EDIT_ONLY) {
 
-                            LogMessage(cur_location, std::format("Only non constant method '{}' alway changed data.", caller));
+                            LogOnly(cur_location, std::format("Only non constant method '{}' alway changed data.", caller));
                             found->second.push_back(cur_location);
 
                         } else if (mode == LifeTimeScope::ModifyMode::BOTH_MODE) {
 
                             if (m_level_non_const_method < clang::DiagnosticsEngine::Level::Warning) {
-                                LogMessage(cur_location, std::format("Both methods '{}' for constant and non-constant objects tracking disabled!", caller));
+                                LogOnly(cur_location, std::format("Both methods '{}' for constant and non-constant objects tracking disabled!", caller));
                                 return true;
                             } else if (m_level_non_const_method == clang::DiagnosticsEngine::Level::Warning) {
-                                LogMessage(cur_location, std::format("Both methods '{}' for constant and non-constant objects warning only!", caller));
-                                FIXIT_DIAG(cur_location, "Both methods '{}' for constant and non-constant objects warning only!", "warning");
+                                LogOnly(cur_location, std::format("Both methods '{}' for constant and non-constant objects warning only!", caller));
                                 return true;
                             } else if (m_level_non_const_method > clang::DiagnosticsEngine::Level::Warning) {
-                                LogMessage(cur_location, std::format("Both methods '{}' for constant and non-constant objects tracking enabled!", caller));
-                                // FIXIT_DIAG(ref->getLocation(), "Both methods '{}' for constant and non-constant objects tracking enabled!", "warning");
+                                LogOnly(cur_location, std::format("Both methods '{}' for constant and non-constant objects tracking enabled!", caller));
                                 found->second.push_back(cur_location);
                                 return true;
                             }
@@ -1266,32 +1197,24 @@ namespace {
                     std::string caller = LifeTimeScope::getName(m_scopes.back().scope);
                     LifeTimeScope::ModifyMode mode = LifeTimeScope::testMode(m_scopes.back().scope);
 
-                    // llvm::outs() << "VisitDeclRefExpr: " << ref_name << "  " << caller << "\n";
-                    // llvm::outs() << static_cast<int> (LifeTimeScope::testMode(m_scopes.back().scope)) << "\n\n";
-
                     auto block_found = m_scopes.findBlocker(depend_found->second);
                     if (block_found != LifeTime::BlockerEnd) {
 
-                        //                        llvm::outs() << "check: " << m_scopes.getCalleeName() << "\n";
-                        //                        llvm::outs() << m_scopes.Dump(ref->getLocation(), "");
-
                         if (!caller.empty()) {
-                            if (m_list_inval_func.find(caller) != m_list_inval_func.end()) {
-                                LogMessage(ref->getLocation(), std::format("Call {} '{}'", MEMSAFE_KEYWORD_INVALIDATE_FUNC, caller));
+                            if (m_invalidate_func.find(caller) != m_invalidate_func.end()) {
+                                LogOnly(ref->getLocation(), std::format("Call {} '{}'", MEMSAFE_KEYWORD_INVALIDATE_FUNC, caller));
                             } else {
                                 caller.clear();
                             }
                         }
 
                         if (block_found->second.empty()) {
-                            LogMessage(ref->getLocation(), std::format("Depended {} corrected!", ref_name));
+                            LogOnly(ref->getLocation(), std::format("Depended {} corrected!", ref_name));
                         } else {
 
                             for (auto &elem : block_found->second) {
                                 llvm::outs() << elem.printToString(m_CI.getSourceManager()) << ": using main variable '" << block_found->first << "'\n";
                             }
-
-                            FIXIT_ERROR(ref->getLocation(), "Using the dependent variable after changing the main variable!", "error", block_found->second.back().printToString(m_CI.getSourceManager()));
                             LogError(ref->getLocation(), std::format("Using the dependent variable '{}' after changing the main variable '{}'!", block_found->first, ref_name));
                         }
                     }
@@ -1301,26 +1224,128 @@ namespace {
             return true;
         }
 
+        std::string getArgName(const Expr * arg) {
+            const DeclRefExpr * dre = nullptr;
+            if (const Expr * init = removeTempExpr(arg)) {
+                dre = dyn_cast<DeclRefExpr>(init->IgnoreUnlessSpelledInSource()->IgnoreImplicit());
+            }
+            if (dre && dre->getDecl()) {
+                return dre->getDecl()->getNameAsString();
+            }
+            return "";
+        }
+
+        bool checkArg(const Expr * arg, std::string &name, const char * &type, int &level) {
+            name = getArgName(arg);
+            if (name.empty()) {
+                LogOnly(arg->getBeginLoc(), "Argument is not a variable");
+                return false;
+            }
+
+            type = m_scopes.findVariable(name, level);
+            if (type == nullptr) {
+                LogError(arg->getBeginLoc(), "Variable name not found!");
+                return false;
+            }
+            return true;
+        }
+
+        bool VisitCallExpr(const CallExpr *call) {
+            if (isEnabled() && call->getNumArgs() == 2) {
+
+                if (call->getDirectCallee()-> getQualifiedNameAsString().compare("std::swap") != 0) {
+                    // check only swap funstion or method
+                    return true;
+                }
+
+                std::string lval;
+                const char * lval_type;
+                int lval_level;
+
+                std::string rval;
+                const char * rval_type;
+                int rval_level;
+
+                if (checkArg(call->getArg(0), lval, lval_type, lval_level) && checkArg(call->getArg(1), rval, rval_type, rval_level)) {
+                    if (std::string_view(SHARED_TYPE).compare(lval_type) == 0 && std::string_view(SHARED_TYPE).compare(rval_type) == 0) {
+                        if (lval_level == rval_level) {
+                            LogOnly(call->getBeginLoc(), "Swap a shared variable an equal lexical level");
+                        } else {
+                            if (m_scopes.testUnsafe().isValid()) {
+                                LogWarning(call->getBeginLoc(), "UNSAFE swap the shared variables of different lexical levels");
+                            } else {
+                                LogError(call->getBeginLoc(), "Error to swap the shared variables of different lexical levels");
+                            }
+                        }
+                    }
+                }
+            }
+            return true;
+        }
+
+        bool VisitCXXOperatorCallExpr(const CXXOperatorCallExpr *op) {
+            if (isEnabled() && op->isAssignmentOp()) {
+
+                assert(op->getNumArgs() == 2);
+
+                std::string lval;
+                const char * lval_type;
+                int lval_level;
+
+                std::string rval;
+                const char * rval_type;
+                int rval_level;
+
+                if (checkArg(op->getArg(0), lval, lval_type, lval_level) && checkArg(op->getArg(1), rval, rval_type, rval_level)) {
+                    if (std::string_view(SHARED_TYPE).compare(lval_type) == 0 && std::string_view(SHARED_TYPE).compare(rval_type) == 0) {
+                        if (lval_level < rval_level) {
+                            LogOnly(op->getBeginLoc(), "Copying a shared variable to a lower lexical level");
+                        } else {
+                            if (m_scopes.testUnsafe().isValid()) {
+                                LogWarning(op->getBeginLoc(), "UNSAFE copy a shared variable");
+                            } else {
+                                LogError(op->getBeginLoc(), "Cannot copy a shared variable to an equal or higher lexical level");
+                            }
+                        }
+                    }
+                }
+            }
+            return true;
+        }
+
         bool VisitReturnStmt(const ReturnStmt *ret) {
 
             if (isEnabled() && ret) {
 
                 if (const ExprWithCleanups * inplace = dyn_cast_or_null<ExprWithCleanups>(ret->getRetValue())) {
-                    FIXIT_DIAG(inplace->getBeginLoc(), "Return inplace", MEMSAFE_KEYWORD_APPROVED);
+                    LogOnly(inplace->getBeginLoc(), "Return inplace object");
                     return true;
                 }
 
-                if (const CXXConstructExpr * expr = dyn_cast_or_null<CXXConstructExpr>(ret->getRetValue())) {
+                std::string retval = getArgName(ret->getRetValue());
+                if (retval.empty()) {
+                    LogOnly(ret->getBeginLoc(), "Return is not a variable");
+                    return true;
+                }
 
-                    const char * found_type = checkClassName(expr->getType().getAsString());
+                int retval_level;
+                const char * retval_type = m_scopes.findVariable(retval, retval_level);
+                if (retval_type == nullptr) {
+                    LogError(ret->getBeginLoc(), "Return variable name not found!");
+                    return true;
+                }
 
-                    if (found_type) {
-                        if (std::string_view(AUTO).compare(found_type) == 0) {
-                            FIXIT_ERROR(ret->getRetValue()->getExprLoc(), "Return auto type", "error");
-                        } else if (std::string_view(SHARED).compare(found_type) == 0) {
-
-                            FIXIT_ERROR(ret->getRetValue()->getExprLoc(), "Return share type", "error");
-                        }
+                if (std::string_view(AUTO_TYPE).compare(retval_type) == 0) {
+                    if (m_scopes.testUnsafe().isValid()) {
+                        LogWarning(ret->getBeginLoc(), "UNSAFE return auto variable");
+                    } else {
+                        LogOnly(ret->getBeginLoc(), "Return auto variable");
+                    }
+                } else if (std::string_view(SHARED_TYPE).compare(retval_type) == 0) {
+                    if (m_scopes.testUnsafe().isValid()) {
+                        LogWarning(ret->getBeginLoc(), "UNSAFE return shared variable");
+                    } else {
+                        LogError(ret->getBeginLoc(), "Return shared variable");
                     }
                 }
             }
@@ -1347,10 +1372,8 @@ namespace {
                 //                llvm::outs() << "m_scopes.testInplaceCaller(): " << m_scopes.testInplaceCaller() << "\n";
 
                 if (m_scopes.testInplaceCaller()) {
-                    LogMessage(unary->getOperatorLoc(), "Inplace address arithmetic");
+                    LogOnly(unary->getOperatorLoc(), "Inplace address arithmetic");
                 } else {
-
-                    FIXIT_ERROR(unary->getOperatorLoc(), "Operator for address arithmetic", "error");
                     LogError(unary->getOperatorLoc(), "Operator for address arithmetic");
                 }
             }
@@ -1403,21 +1426,15 @@ namespace {
                 // The name of the variable
                 std::string var_name = var->getNameAsString();
 
-                // llvm::outs() << "TraverseVarDecl: " << var_name << " -> " << found_type << "\n";
-                // type_ptr->dump();
-
                 if (!found_type) {
 
                     // The type (class) of the variable does not require analysis
                     m_scopes.back().other.emplace(var_name);
 
-                } else if (INVAL_TYPE == found_type) {
+                } else if (POINTER_TYPE == found_type) {
 
                     // The type (class) of a reference type variable depends on the data 
                     // and may become invalid if the original data changes.
-
-
-                    // FIXIT_DIAG(var->getLocation(), "Iterator found", MEMSAFE_KEYWORD_APPROVED);
 
 
                     const DeclRefExpr * dre = nullptr;
@@ -1448,15 +1465,9 @@ namespace {
                         m_scopes.back().dependent.emplace(var_name, depend_name);
                         m_scopes.back().blocker.emplace(depend_name, std::vector<SourceLocation>({dre->getLocation()}));
 
-                        // llvm::outs() << dre->getLocation().printToString(m_CI.getSourceManager()) << "\n";
-                        // depend_name += "=>";
-                        // depend_name += var_name;
-
-                        LogMessage(var->getLocation(), std::format("{}:{}=>{}", var_name, found_type, depend_name));
+                        LogOnly(var->getLocation(), std::format("{}:{}=>{}", var_name, found_type, depend_name));
 
                     } else {
-
-                        FIXIT_ERROR(var->getLocation(), "Unknown depended type", "depend");
                         LogError(var->getLocation(), std::format("Unknown depended type {}:{}", var_name, found_type));
                     }
 
@@ -1474,17 +1485,22 @@ namespace {
                      * 
                      * SD_Dynamic 	Dynamic storage duration. 
                      */
-                    if (AUTO == found_type && var->getStorageDuration() == SD_Static) {
-                        FIXIT_ERROR(var->getLocation(), "Create auto variabe as static", "error");
+                    if (AUTO_TYPE == found_type && var->getStorageDuration() == SD_Static) {
                         LogError(var->getLocation(), std::format("Create auto variabe as static {}:{}", var_name, found_type));
                     } else {
-
-                        LogMessage(var->getLocation(), std::format("Var found {}:{}", var_name, found_type));
+                        LogOnly(var->getLocation(), std::format("Var found {}:{}", var_name, found_type));
                     }
                 }
             }
 
             return RecursiveASTVisitor<MemSafePlugin>::TraverseVarDecl(var);
+        }
+
+        bool TraverseParmVarDecl(ParmVarDecl * param) {
+            if (isEnabledStatus()) {
+                m_scopes.AddVarDecl(param, checkClassNameTracking(param->getType()->getAsCXXRecordDecl()));
+            }
+            return true;
         }
 
         /*
@@ -1568,51 +1584,16 @@ namespace {
     class MemSafePluginASTConsumer : public ASTConsumer {
     public:
 
-        FixItRewriterOptions FixItOptions;
-
-        /*
-         * 
-         * 
-         * 
-         * 
-         */
-
         void HandleTranslationUnit(ASTContext &context) override {
-
-            std::unique_ptr<clang::FixItRewriter> Rewriter;
-
-            if (!FixItOptions.RewriteSuffix.empty()) {
-
-                Rewriter = std::make_unique<clang::FixItRewriter>(context.getDiagnostics(),
-                        context.getSourceManager(),
-                        context.getLangOpts(),
-                        &FixItOptions);
-
-                assert(Rewriter);
-
-                context.getDiagnostics().setClient(Rewriter.get(), /*ShouldOwnClient=*/false);
-
-            }
-
-            plugin->is_fixit = !!Rewriter;
 
             context.getParentMapContext().setTraversalKind(clang::TraversalKind::TK_IgnoreUnlessSpelledInSource);
             plugin->TraverseDecl(context.getTranslationUnitDecl());
 
-
             if (logger) {
-                llvm::outs() << "\nLogger output:\n";
                 logger->Dump(llvm::outs());
-
                 llvm::outs() << "\n";
-                plugin->dump();
+                plugin->dump(llvm::outs());
             }
-
-            if (Rewriter) {
-
-                Rewriter->WriteFixedFiles();
-            }
-
         }
     };
 
@@ -1624,17 +1605,11 @@ namespace {
      */
 
     class MemSafePluginASTAction : public PluginASTAction {
-        std::string fixit_file_ext;
-        std::string m_marker;
     public:
 
         std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &Compiler, StringRef InFile) override {
 
             std::unique_ptr<MemSafePluginASTConsumer> obj = std::unique_ptr<MemSafePluginASTConsumer>(new MemSafePluginASTConsumer());
-            if (!m_marker.empty()) {
-                plugin->m_prefix = m_marker;
-            }
-            obj->FixItOptions.RewriteSuffix = fixit_file_ext;
 
             return obj;
         }
@@ -1670,28 +1645,7 @@ namespace {
                 std::string message = plugin->processArgs(first, second);
 
                 if (!message.empty()) {
-                    if (first.compare("fixit") == 0) {
-
-                        fixit_file_ext = second;
-                        if (fixit_file_ext.empty()) {
-                            llvm::errs() << "To enable FixIt output to a file, you must specify the extension of the file being created!\n";
-                            return false;
-                        }
-                        if (fixit_file_ext[0] != '.') {
-                            fixit_file_ext.insert(0, ".");
-                        }
-                        PrintColor(llvm::outs(), "Enabled FixIt output to a file with the extension: '{}'", fixit_file_ext);
-
-                    } else if (first.compare("marker") == 0) {
-
-                        if (second.empty()) {
-                            llvm::errs() << "Debug trace marker cannot be empty!\n";
-                            return false;
-                        }
-                        m_marker = second;
-                        PrintColor(llvm::outs(), "Using debug trace marker: '{}'", m_marker);
-
-                    } else if (first.compare("log") == 0) {
+                    if (first.compare("log") == 0) {
 
                         logger = std::unique_ptr<MemSafeLogger>(new MemSafeLogger(CI));
                         PrintColor(llvm::outs(), "Enable dump and process logger");

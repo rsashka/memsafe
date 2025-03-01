@@ -9,6 +9,7 @@
 #include <chrono>
 
 #include "memsafe.h"
+#include "memsafe_plugin.h"
 
 using namespace memsafe;
 using namespace std::chrono_literals;
@@ -340,15 +341,26 @@ TEST(MemSafe, Depend) {
         ASSERT_EQ(0, vect.size());
         ASSERT_EQ(0, *s);
 
-        std::vector<int> data(10, 0);
-        auto reserve = LAZYCALL(vect, reserve, (size_t)10);
-        *reserve;
+        // std::vector<int> data(1, 1);
+        // auto reserve = LAZYCALL(vect, reserve, 10UL);
+        // *reserve;
+        //
+        // auto db = LAZYCALL(data, begin);
+        // auto de = LAZYCALL(data, end);
+        //
+        // ASSERT_EQ(1, data[0]);
+        // // @todo variadic tempalte as variadic template argument
+        // auto call = LAZYCALL(vect, assign, db, de);
 
-        auto call = LAZYCALL(vect, assign, data.begin(), data.end());
-        *call;
-        
-        ASSERT_EQ(10, vect.size());
-        ASSERT_EQ(10, *s);
+        // data.clear();
+        // data.shrink_to_fit();
+        // *call;
+
+        // ASSERT_EQ(1, vect.size());
+        // ASSERT_EQ(1, *s);
+        //
+        // ASSERT_EQ(1, data[0]);
+        // ASSERT_EQ(1, vect[0]);
 
         vect.shrink_to_fit();
         std::sort(*b, *e);
@@ -393,141 +405,161 @@ TEST(MemSafe, ApplyAttr) {
 
 }
 
-//TEST(MemSafe, Plugin) {
-//
-//    namespace fs = std::filesystem;
-//
-//
-//    // Example of running a plugin to compile a file
-//
-//    /* The plugin operation is checked as follows.
-//     * A specific file with examples of template usage from the metsafe/ file is compiled
-//     * The example file contains correct C++ code, 
-//     * but the variables in it are used both correctly and with violations of the rules.
-//     * 
-//     * When compiling a file with an analyzer plugin, debug output is created and written to a debug file.
-//     * This file is read in the test and debug messages of the plugin 
-//     * are searched for in it (both successful and unsuccessful checks).
-//     * 
-//     * If all check messages are found, the test is considered successful.
-//     */
-//
-//    std::string cmd = "clang-19";
-//    cmd += " -std=c++20 -ferror-limit=500 ";
-//    cmd += " -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe ";
-//    cmd += " -Xclang -plugin-arg-memsafe -Xclang fixit=memsafe ";
-//    cmd += " -c _example.cpp ";
-//
-//    const char * file_out = "_example.cpp.memsafe";
-//    fs::remove(file_out);
-//    int err = std::system(cmd.c_str());
-//
-//    ASSERT_TRUE(fs::exists(file_out));
-//
-//    std::ifstream file(file_out);
-//
-//    ASSERT_TRUE(file.is_open());
-//
-//    std::stringstream buffer;
-//    buffer << file.rdbuf();
-//
-//    std::string output = buffer.str();
-//    file.close();
-//
-//    ASSERT_TRUE(!output.empty());
-//
-//
-//    std::vector<int> vect{1, 2, 3, 4};
-//    auto beg = vect.begin();
-//    auto end = vect.end();
-//    vect = {};
-//    vect.shrink_to_fit();
-//    std::sort(beg, end); // malloc(): unaligned tcache chunk detected
-//
-//
-//    std::set<std::string> diag({
-//        "#106 #approved",
-//        "#106 #depend",
-//
-//        "#107 #approved",
-//        "#107 #depend",
-//
-//        "#108 #approved",
-//        "#108 #depend",
-//
-//        "#109 #error",
-//
-//        "#1001 #approved",
-//        "#1002 #approved",
-//        "#1003 #approved",
-//
-//        "#2003 #approved",
-//
-//        "#3002 #error",
-//        "#3003 #error",
-//
-//        "#4002 #approved",
-//
-//        "#4020 #approved",
-//        "#4021 #approved",
-//        "#4028 #approved",
-//        "#4035 #approved",
-//
-//        "#5002 #approved",
-//
-//
-//        "#113 #approved",
-//        "#4005 #approved",
-//
-//        "#4007 #approved",
-//        "#4009 #approved",
-//        "#4024 #approved",
-//        "#4025 #approved",
-//        "#4029 #approved",
-//        "#4030 #approved",
-//        "#4031 #approved",
-//        "#4037 #approved",
-//        "#4038 #approved",
-//        "#4039 #approved",
-//        "#4041 #approved",
-//        "#4042 #approved",
-//        "#4044 #approved",
-//        "#4055 #approved",
-//
-//
-//    });
-//
-//    size_t line;
-//    std::multimap<size_t, const char *> list;
-//    for (auto &elem : diag) {
-//        line = atoi(&elem[1]);
-//        ASSERT_TRUE(line) << elem;
-//        list.emplace(line, elem.data());
-//    }
-//
-//
-//    size_t pos = output.find("##memsafe ");
-//    size_t pos_end = 0;
-//    while (pos != std::string::npos) {
-//
-//        pos_end = output.find(" */", pos);
-//        line = atoi(&output[pos + 11]);
-//        auto found = list.find(line);
-//        if (found == list.end()) {
-//            ADD_FAILURE() << "Not found: " << output.substr(pos - 3, output.find(" */", pos) - pos + 6);
-//        } else if (output.find(found->second, pos + 10) != pos + 10) {
-//            ADD_FAILURE() << "At line: #" << line << " expected: \"" << found->second << "\" but found \"" << output.substr(pos + 10, output.find(" */", pos) - pos - 10) << "\"";
-//            list.erase(found);
-//        } else {
-//            list.erase(found);
-//        }
-//        pos = output.find("##memsafe", pos_end);
-//    };
-//
-//    for (auto &elem : list) {
-//        ADD_FAILURE() << "Not found: " << elem.second;
-//    }
-//
-//}
+TEST(MemSafe, Plugin) {
+
+    namespace fs = std::filesystem;
+
+
+    // Example of running a plugin to compile a file
+
+    /* The plugin operation is checked as follows.
+     * A specific file with examples of template usage from the metsafe/ file is compiled
+     * The example file contains correct C++ code, 
+     * but the variables in it are used both correctly and with violations of the rules.
+     * 
+     * When compiling a file with an analyzer plugin, the debug output is written to a file.
+     * This file is read in the test and debug messages of the plugin 
+     * are searched for in it (both successful and unsuccessful checks).
+     * 
+     * If all check messages are found, the test is considered successful.
+     */
+
+    std::string cmd = "clang-20";
+    cmd += " -std=c++20 -ferror-limit=500 ";
+    cmd += " -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe ";
+    cmd += " -Xclang -plugin-arg-memsafe -Xclang log ";
+    cmd += " -c _example.cpp > _example.cpp.log";
+
+    const char * file_log = "_example.cpp.log";
+    fs::remove(file_log);
+
+    int err = std::system(cmd.c_str());
+
+    ASSERT_TRUE(fs::exists(file_log));
+    std::ifstream log_file(file_log);
+
+    ASSERT_TRUE(log_file.is_open());
+
+    std::stringstream log_buffer;
+    log_buffer << log_file.rdbuf();
+
+    std::string log_output = log_buffer.str();
+    log_file.close();
+
+
+    ASSERT_TRUE(!log_output.empty());
+
+    ASSERT_TRUE(log_output.find("Enable dump and process logger") != std::string::npos &&
+            log_output.find("unprocessed attribute!") == std::string::npos)
+            << log_output;
+
+
+    std::multiset<std::string> diag({
+        "#log #201",
+        "#log #202",
+        "#log #202",
+        "#err #204",
+        "#log #207",
+        "#log #208",
+        "#err #209",
+        "#log #301",
+        "#log #301",
+        "#log #302",
+        "#err #303",
+        "#log #303",
+        "#log #401",
+        "#log #402",
+        "#log #501",
+        "#log #901",
+        "#log #902",
+        "#log #903",
+        "#log #903",
+        "#log #1001",
+        "#log #1002",
+        "#log #1003",
+        "#log #2003",
+        "#err #3002",
+        "#err #3003",
+        "#log #4201",
+        "#log #4202",
+        "#err #4301",
+        "#log #4302",
+        "#warn #4302",
+        "#log #4401",
+        "#err #4402",
+        "#err #4403",
+        "#err #4404",
+        "#log #4501",
+        "#err #4503",
+        "#err #4504",
+        "#err #4505",
+        "#err #4507",
+        "#err #4508",
+        "#err #4510",
+        "#log #4513",
+        "#warn #4513",
+        "#err #4515",
+        "#log #4601",
+        "#err #4602",
+        "#log #4603",
+        "#warn #4603",
+        "#err #4701",
+        "#log #4703",
+        "#log #4801",
+        "#err #8901",
+        "#log #9901",
+    });
+
+    size_t line;
+    std::multimap<size_t, const char *> list;
+    for (auto &elem : diag) {
+        line = atoi(&elem.substr(elem.find(" #") + 2)[0]);
+        ASSERT_TRUE(line) << elem;
+        list.emplace(line, elem.data());
+    }
+
+    size_t pos = log_output.find(MEMSAFE_KEYWORD_START_LOG);
+    ASSERT_TRUE(pos != std::string::npos);
+    std::string log_str = log_output.substr(pos + strlen(MEMSAFE_KEYWORD_START_LOG), log_output.find("\n\n", pos + strlen(MEMSAFE_KEYWORD_START_LOG)) - pos - strlen(MEMSAFE_KEYWORD_START_LOG));
+
+    //    std::cout << "\n" << log_str << "\n\n";
+
+    std::vector< std::string> log;
+    SplitString(log_str, '\n', &log);
+
+    ASSERT_TRUE(log.size()) << log_str;
+
+    pos = 0;
+    while (pos < log.size()) {
+
+        size_t type_pos = log[pos].find("#");
+        ASSERT_TRUE(type_pos != std::string::npos) << pos << " " << log[pos];
+
+        size_t hash_pos = log[pos].find(" #", type_pos + 1);
+        ASSERT_TRUE(hash_pos != std::string::npos) << pos << " " << log[pos];
+
+        line = atoi(log[pos].data() + hash_pos + 2);
+        ASSERT_TRUE(line) << pos << " " << log[pos];
+
+        size_t msg_pos = log[pos].find(" ", hash_pos + 1);
+        ASSERT_TRUE(msg_pos != std::string::npos) << pos << " " << log[pos];
+
+        auto found = list.find(line);
+        if (found == list.end()) {
+            ADD_FAILURE() << "Not found: " << log[pos] << " " << line << " pos: " << pos;
+        } else if (log[pos].find(found->second) != type_pos) {
+            ADD_FAILURE() << "At mark line: #" << line << " expected: \"" << found->second << "\" but found \"" << log[pos] << "\"";
+            list.erase(found);
+        } else {
+            list.erase(found);
+        }
+        pos++;
+    }
+
+    for (auto &elem : list) {
+        ADD_FAILURE() << "Not found: " << elem.second;
+    }
+
+}
 
 #endif

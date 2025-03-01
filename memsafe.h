@@ -40,13 +40,13 @@
 #define MEMSAFE_KEYWORD_PRINT_DUMP "print-dump"
 #define MEMSAFE_KEYWORD_BASELINE "baseline"
 
+#define MEMSAFE_KEYWORD_START_LOG "#memsafe-log\n"
+#define MEMSAFE_KEYWORD_START_DUMP "#memsafe-dump\n"
+
 #define MEMSAFE_KEYWORD_ENABLE "enable"
 #define MEMSAFE_KEYWORD_DISABLE "disable"
 #define MEMSAFE_KEYWORD_PUSH "push"
 #define MEMSAFE_KEYWORD_POP "pop"
-
-#define MEMSAFE_KEYWORD_SHARED "shared"
-#define MEMSAFE_KEYWORD_AUTO "auto"
 
 #define MEMSAFE_KEYWORD_ERROR "error"
 #define MEMSAFE_KEYWORD_WARNING "warning"
@@ -54,13 +54,12 @@
 #define MEMSAFE_KEYWORD_REMARK "remark"
 #define MEMSAFE_KEYWORD_IGNORED "ignored"
 
-#define MEMSAFE_KEYWORD_APPROVED "approved"
-
-
 #define MEMSAFE_KEYWORD_NONCONST_ARG "nonconst-arg"
 #define MEMSAFE_KEYWORD_NONCONST_METHOD "nonconst-method"
 
-#define MEMSAFE_KEYWORD_INVALIDATE_TYPE  "invalidate-type"
+#define MEMSAFE_KEYWORD_AUTO_TYPE "auto-type"
+#define MEMSAFE_KEYWORD_SHARED_TYPE "shared-type"
+#define MEMSAFE_KEYWORD_POINTER_TYPE  "pointer-type"
 #define MEMSAFE_KEYWORD_INVALIDATE_FUNC  "invalidate-func"
 
 
@@ -83,21 +82,19 @@
 #define TO_STR(ARG) TO_STR2(ARG)
 #endif
 
-#define MEMSAFE_ERR(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_ERROR, name)
-#define MEMSAFE_WARN(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_WARNING, name)
-
 #define MEMSAFE_PROFILE(file) MEMSAFE_ATTR(MEMSAFE_KEYWORD_PROFILE, file)
 #define MEMSAFE_STATUS(status) MEMSAFE_ATTR(MEMSAFE_KEYWORD_STATUS, status)
 #define MEMSAFE_UNSAFE MEMSAFE_ATTR(MEMSAFE_KEYWORD_UNSAFE, TO_STR(__LINE__))
 
-#define MEMSAFE_SHARED(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_SHARED, name)
-#define MEMSAFE_AUTO(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_AUTO, name)
+#define MEMSAFE_ERROR_TYPE(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_ERROR "-type", name)
+#define MEMSAFE_WARNING_TYPE(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_WARNING "-type", name)
+#define MEMSAFE_AUTO_TYPE(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_AUTO_TYPE, name)
+#define MEMSAFE_SHARED_TYPE(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_SHARED_TYPE, name)
+#define MEMSAFE_POINTER_TYPE(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_POINTER_TYPE, name)
+#define MEMSAFE_INVALIDATE_FUNC(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_INVALIDATE_FUNC, name)
 
 #define MEMSAFE_NONCONST_ARG(status) MEMSAFE_ATTR(MEMSAFE_KEYWORD_NONCONST_ARG, status)
 #define MEMSAFE_NONCONST_METHOD(status) MEMSAFE_ATTR(MEMSAFE_KEYWORD_NONCONST_METHOD, status)
-
-#define MEMSAFE_INV_TYPE(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_INVALIDATE_TYPE, name)
-#define MEMSAFE_INV_FUNC(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_INVALIDATE_FUNC, name)
 
 #define MEMSAFE_PRINT_AST(filter) MEMSAFE_ATTR(MEMSAFE_KEYWORD_PRINT_AST, filter) void memsafe_stub();
 #define MEMSAFE_PRINT_DUMP(filter) MEMSAFE_ATTR(MEMSAFE_KEYWORD_PRINT_DUMP, filter) void memsafe_stub();
@@ -370,7 +367,7 @@ namespace memsafe { // Begin define memory safety classes
 
         typedef std::weak_ptr<V> WeakType;
 
-        VarShared(const V &val) : memsafe::shared_ptr<V>(std::make_shared<V>(val)) {
+        VarShared(const V & val) : memsafe::shared_ptr<V>(std::make_shared<V>(val)) {
         }
 
         VarShared(const VarShared<V> &val) : VarShared(*val) {
@@ -1000,34 +997,32 @@ namespace memsafe { // Begin define memory safety classes
 
     MEMSAFE_PROFILE(""); // Reset to default profile
 
-    MEMSAFE_ERR("std::auto_ptr");
-    MEMSAFE_ERR("std::shared_ptr");
-    MEMSAFE_WARN("std::auto_ptr");
-    MEMSAFE_WARN("std::shared_ptr");
+    MEMSAFE_ERROR_TYPE("std::auto_ptr");
+    MEMSAFE_WARNING_TYPE("std::auto_ptr");
 
-    MEMSAFE_SHARED("memsafe::VarShared");
-    MEMSAFE_AUTO("memsafe::VarAuto");
+    MEMSAFE_SHARED_TYPE("memsafe::VarShared");
+    MEMSAFE_AUTO_TYPE("memsafe::VarAuto");
 
-    MEMSAFE_INV_TYPE("__gnu_cxx::__normal_iterator");
-    MEMSAFE_INV_TYPE("std::reverse_iterator");
+    MEMSAFE_POINTER_TYPE("__gnu_cxx::__normal_iterator");
+    MEMSAFE_POINTER_TYPE("std::reverse_iterator");
 
     /*
      * For a basic_string_view str, pointers, iterators, and references to elements of str are invalidated 
      * when an operation invalidates a pointer in the range [str.data(), str.data() + str.size()).
      */
-    MEMSAFE_INV_TYPE("std::basic_string_view");
+    MEMSAFE_POINTER_TYPE("std::basic_string_view");
     /*
      * For a span s, pointers, iterators, and references to elements of s are invalidated 
      * when an operation invalidates a pointer in the range [s.data(), s.data() + s.size()). 
      */
-    MEMSAFE_INV_TYPE("std::span");
+    MEMSAFE_POINTER_TYPE("std::span");
 
 
     MEMSAFE_NONCONST_ARG("ignored");
     MEMSAFE_NONCONST_METHOD("ignored");
 
-    MEMSAFE_INV_FUNC("std::swap");
-    MEMSAFE_INV_FUNC("std::move");
+    MEMSAFE_INVALIDATE_FUNC("std::swap");
+    MEMSAFE_INVALIDATE_FUNC("std::move");
 
 
     // End define memory safety classes

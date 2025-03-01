@@ -68,7 +68,7 @@
       </compileType>
       <item path="_example.cpp" ex="false" tool="1" flavor2="0">
         <ccTool>
-          <commandLine>-std=c++26 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -Xclang -plugin-arg-memsafe -Xclang fixit=memsafe -Xclang -plugin-arg-memsafe -Xclang log</commandLine>
+          <commandLine>-std=c++26 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -Xclang -plugin-arg-memsafe -Xclang log</commandLine>
           <additionalDep>memsafe_clang.so</additionalDep>
         </ccTool>
       </item>

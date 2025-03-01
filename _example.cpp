@@ -13,25 +13,22 @@ namespace ns {
         std::vector<int> vect{1, 2, 3, 4};
         {
 
-            //            MEMSAFE_PRINT_AST("*");
             MEMSAFE_BASELINE(200);
             auto beg = vect.begin();
             std::vector<int>::const_iterator beg_const = vect.cbegin();
 
-            auto refff = &vect;
+            auto pointer = &vect; // Error
 
             auto str = std::string();
             std::string_view view(str);
             str.clear();
-            auto view_iter = view.begin();
+            auto view_iter = view.begin(); // Error
 
-            /* MEMSAFE_UNSAFE */
             {
                 MEMSAFE_BASELINE(300);
                 vect = {};
                 vect.shrink_to_fit();
-                //                std::swap(beg, beg);
-                std::sort(beg, vect.end());
+                std::sort(beg, vect.end()); // Error
                 const std::vector<int> vect_const;
             }
         }
@@ -73,8 +70,8 @@ namespace ns {
 
     MEMSAFE_BASELINE(3000);
     static memsafe::VarValue<int> var_static(1);
-    static auto static_fail1(var_static.take());
-    static auto static_fail2 = var_static.take();
+    static auto static_fail1(var_static.take()); // Error
+    static auto static_fail2 = var_static.take(); // Error
 
     MEMSAFE_BASELINE(4000);
 
@@ -94,33 +91,42 @@ namespace ns {
         memsafe::VarShared<int> var_shared2(1);
 
         MEMSAFE_BASELINE(4300);
-        var_shared1 = var_shared1;
-        var_shared1 = var_shared2;
+        var_shared1 = var_shared1; // Error
+        MEMSAFE_UNSAFE var_shared1 = var_shared2; // Unsafe
+
         {
             MEMSAFE_BASELINE(4400);
             memsafe::VarShared<int> var_shared3(3);
-            var_shared1 = var_shared1;
-            var_shared2 = var_shared1;
-            var_shared3 = var_shared1;
+            var_shared1 = var_shared1; // Error
+            var_shared2 = var_shared1; // Error
+            var_shared3 = var_shared1; // Error
 
             {
                 MEMSAFE_BASELINE(4500);
                 memsafe::VarShared<int> var_shared4 = var_shared1;
 
-                var_shared1 = var_shared1;
-                var_shared2 = var_shared1;
-                var_shared3 = var_shared1;
+                var_shared1 = var_shared1; // Error
+                var_shared2 = var_shared1; // Error
+                var_shared3 = var_shared1; // Error
 
-                var_shared4 = var_shared1;
-                var_shared4 = var_shared3;
+                var_shared4 = var_shared1; // Error
+                var_shared4 = var_shared3; // Error
 
-                var_shared4 = var_shared4;
-                //                return var_shared4; // Error
+                var_shared4 = var_shared4; // Error
+
+                if (var_shared4) {
+                    MEMSAFE_UNSAFE return var_shared4;
+                }
+                return var_shared4; // Error
             }
 
             MEMSAFE_BASELINE(4600);
-            //            return arg; // Error
+            std::swap(var_shared1, var_shared2);
             std::swap(var_shared1, var_shared3);
+            MEMSAFE_UNSAFE std::swap(var_shared1, var_shared3);
+
+            MEMSAFE_BASELINE(4700);
+            return arg; // Error
         }
 
         MEMSAFE_BASELINE(4700);
@@ -138,9 +144,8 @@ namespace ns {
 
     memsafe::VarShared<int> memory_test_8(memsafe::VarShared<int> arg) {
         MEMSAFE_BASELINE(8900);
-        return arg;
+        return arg; // Error
     }
-
 
     MEMSAFE_BASELINE(9000);
 
