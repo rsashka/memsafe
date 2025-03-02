@@ -48,6 +48,8 @@
 #define MEMSAFE_KEYWORD_PUSH "push"
 #define MEMSAFE_KEYWORD_POP "pop"
 
+// maximum diagnostic level of plugin message when error is detected in source code
+#define MEMSAFE_KEYWORD_LEVEL "level"
 #define MEMSAFE_KEYWORD_ERROR "error"
 #define MEMSAFE_KEYWORD_WARNING "warning"
 #define MEMSAFE_KEYWORD_NOTE "note"
@@ -84,6 +86,7 @@
 
 #define MEMSAFE_PROFILE(file) MEMSAFE_ATTR(MEMSAFE_KEYWORD_PROFILE, file)
 #define MEMSAFE_STATUS(status) MEMSAFE_ATTR(MEMSAFE_KEYWORD_STATUS, status)
+#define MEMSAFE_DIAG_LEVEL(level) MEMSAFE_ATTR(MEMSAFE_KEYWORD_LEVEL, level)
 #define MEMSAFE_UNSAFE MEMSAFE_ATTR(MEMSAFE_KEYWORD_UNSAFE, TO_STR(__LINE__))
 
 #define MEMSAFE_ERROR_TYPE(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_ERROR "-type", name)
@@ -155,35 +158,35 @@
  */
 
 /**
- * @def MEMSAFE_ERR("full:class::name")
+ * @def MEMSAFE_ERROR_TYPE("full:class::name")
  * 
  * The fully qualified name of the class that will generate the error message 
  * when used (or when using a class derived from the specified one).
  */
 
 /**
- * @def MEMSAFE_WARN("full:class::name")
+ * @def MEMSAFE_WARNING_TYPE("full:class::name")
  * 
  * The fully qualified name of the class that will generate the warning message 
  * when used (or when using a class derived from the specified one).
  */
 
 /**
- * @def MEMSAFE_SHARED("full:class::name")
+ * @def MEMSAFE_SHARED_TYPE("full:class::name")
  * 
  * The fully qualified name of a class that contains a strong pointer
  * to shared data whose ownership is to be controlled at the syntax level.
  */
 
 /**
- * @def MEMSAFE_AUTO("full:class::name")
+ * @def MEMSAFE_AUTO_TYPE("full:class::name")
  * 
  * The fully qualified name of a class that contains a strong pointer 
  * to an automatic (temporary) variable whose ownership must be controlled at the syntax level.
  */
 
 /**
- * @def MEMSAFE_INV_TYPE("unsafe data type")
+ * @def MEMSAFE_POINTER_FUNC("unsafe data type")
  * 
  * An unsafe data type that can be corrupted if data in the underlying object is modified.
  * i.e. __gnu_cxx::__normal_iterator, std::reverse_iterator, std::basic_string_view, std::span and etc.
@@ -207,7 +210,7 @@
  */
 
 /**
- * @def MEMSAFE_INV_FUNC("unsafe function name")
+ * @def MEMSAFE_INVALIDATE_FUNC("unsafe function name")
  * The name of a function that, when passed as an argument to a base object, 
  * always causes previously obtained references and iterators to be invalidated,
  * regardless of the default settings @ref MEMSAFE_NONCONST_ARG
@@ -1000,8 +1003,8 @@ namespace memsafe { // Begin define memory safety classes
     MEMSAFE_ERROR_TYPE("std::auto_ptr");
     MEMSAFE_WARNING_TYPE("std::auto_ptr");
 
-    MEMSAFE_SHARED_TYPE("memsafe::VarShared");
     MEMSAFE_AUTO_TYPE("memsafe::VarAuto");
+    MEMSAFE_SHARED_TYPE("memsafe::VarShared");
 
     MEMSAFE_POINTER_TYPE("__gnu_cxx::__normal_iterator");
     MEMSAFE_POINTER_TYPE("std::reverse_iterator");

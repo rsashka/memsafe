@@ -66,7 +66,7 @@ ${CND_DISTDIR}/${CND_CONF}/${CND_PLATFORM}/memsafe: ${OBJECTFILES}
 ${OBJECTDIR}/_example.o: _example.cpp memsafe_clang.so nbproject/Makefile-${CND_CONF}.mk
 	${MKDIR} -p ${OBJECTDIR}
 	${RM} "$@.d"
-	$(COMPILE.cc) -g -DBUILD_UNITTEST -I. -std=c++26 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -Xclang -plugin-arg-memsafe -Xclang log -MMD -MP -MF "$@.d" -o ${OBJECTDIR}/_example.o _example.cpp
+	$(COMPILE.cc) -g -DBUILD_UNITTEST -I. -std=c++20 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -Xclang -plugin-arg-memsafe -Xclang log -Xclang -plugin-arg-memsafe -Xclang level=warning -MMD -MP -MF "$@.d" -o ${OBJECTDIR}/_example.o _example.cpp
 
 memsafe_clang.so: memsafe_clang.cpp nbproject/Makefile-${CND_CONF}.mk
 	@echo "\033[1;46;34m"Building a plugin memsafe_clang.so"\033[0m"

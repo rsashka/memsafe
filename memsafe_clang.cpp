@@ -570,6 +570,7 @@ namespace {
         // The first string arguments in the `memsafe` attribute for working and managing the plugin
         static inline const char * PROFILE = MEMSAFE_KEYWORD_PROFILE;
         static inline const char * STATUS = MEMSAFE_KEYWORD_STATUS;
+        static inline const char * LEVEL = MEMSAFE_KEYWORD_LEVEL;
 
         static inline const char * ERROR = MEMSAFE_KEYWORD_ERROR;
         static inline const char * WARNING = MEMSAFE_KEYWORD_WARNING;
@@ -587,8 +588,9 @@ namespace {
         static inline const char * STATUS_PUSH = MEMSAFE_KEYWORD_PUSH;
         static inline const char * STATUS_POP = MEMSAFE_KEYWORD_POP;
 
-        std::set<std::string> m_listFirstArg{PROFILE, UNSAFE, SHARED_TYPE, AUTO_TYPE, POINTER_TYPE, INVALIDATE_FUNC, WARNING_TYPE, ERROR_TYPE, STATUS, BASELINE, NONCONST_ARG, NONCONST_METHOD, PRINT_AST, PRINT_DUMP};
+        std::set<std::string> m_listFirstArg{PROFILE, STATUS, LEVEL, UNSAFE, SHARED_TYPE, AUTO_TYPE, POINTER_TYPE, INVALIDATE_FUNC, WARNING_TYPE, ERROR_TYPE, BASELINE, NONCONST_ARG, NONCONST_METHOD, PRINT_AST, PRINT_DUMP};
         std::set<std::string> m_listStatus{STATUS_ENABLE, STATUS_DISABLE, STATUS_PUSH, STATUS_POP};
+        std::set<std::string> m_listLevel{ERROR, WARNING, NOTE, REMARK, IGNORED};
 
         /**
          * List of base classes that contain strong pointers to data 
@@ -619,8 +621,7 @@ namespace {
 
         clang::DiagnosticsEngine::Level m_level_non_const_arg;
         clang::DiagnosticsEngine::Level m_level_non_const_method;
-
-        bool m_warning_only;
+        clang::DiagnosticsEngine::Level m_diagnostic_level;
 
         static const inline std::pair<std::string, std::string> pair_empty{std::make_pair<std::string, std::string>("", "")};
 
@@ -637,11 +638,11 @@ namespace {
         const CompilerInstance &m_CI;
 
         MemSafePlugin(const CompilerInstance &instance) :
-        m_CI(instance), m_scopes(instance), m_warning_only(false), line_base(0), line_number(0) {
+        m_CI(instance), m_scopes(instance), line_base(0), line_number(0) {
             // Zero level for static variables
             m_scopes.PushScope(SourceLocation(), std::monostate(), SourceLocation());
 
-            m_warning_only = true;
+            m_diagnostic_level = clang::DiagnosticsEngine::Level::Error;
 
         }
 
@@ -672,8 +673,8 @@ namespace {
             }
             if (!isEnabled()) {
                 return clang::DiagnosticsEngine::Level::Ignored;
-            } else if (original == clang::DiagnosticsEngine::Level::Error && m_warning_only) {
-                return clang::DiagnosticsEngine::Level::Warning;
+            } else if (original > m_diagnostic_level) {
+                return m_diagnostic_level;
             }
             return original;
         }
@@ -738,16 +739,6 @@ namespace {
                     *level = clang::DiagnosticsEngine::Level::Warning;
                 }
                 return true;
-            } else if (str.compare(NOTE) == 0) {
-                if (level) {
-                    *level = clang::DiagnosticsEngine::Level::Note;
-                }
-                return true;
-            } else if (str.compare(REMARK) == 0) {
-                if (level) {
-                    *level = clang::DiagnosticsEngine::Level::Remark;
-                }
-                return true;
             } else if (str.compare(IGNORED) == 0) {
                 if (level) {
                     *level = clang::DiagnosticsEngine::Level::Ignored;
@@ -755,6 +746,14 @@ namespace {
                 return true;
             }
             return false;
+        }
+
+        static std::string unknownArgumentHelper(const std::string_view arg, const std::set<std::string> & set) {
+            std::string result = "Unknown argument '";
+            result += arg.begin();
+            result += "'. Expected string argument from the following list: ";
+            result += makeHelperString(set);
+            return result;
         }
 
         std::string processArgs(std::string_view first, std::string_view second) {
@@ -769,32 +768,16 @@ namespace {
                     result = "Two string literal arguments expected!";
                 }
             } else if (m_listFirstArg.find(first.begin()) == m_listFirstArg.end()) {
-
-                static std::string first_list;
-                if (first_list.empty()) {
-                    first_list = makeHelperString(m_listFirstArg);
-                }
-                result = "Unknown argument '";
-                result += first.begin();
-                result += "'. Expected string argument from the following list: ";
-                result += first_list;
+                result = unknownArgumentHelper(first.begin(), m_listFirstArg);
             }
 
             static const char * LEVEL_ERROR_MESSAGE = "Required behavior not recognized! Allowed values: '"
-                    MEMSAFE_KEYWORD_ERROR "', '" "', '" MEMSAFE_KEYWORD_WARNING "', '" MEMSAFE_KEYWORD_NOTE "', '"
-                    MEMSAFE_KEYWORD_REMARK "' or '" MEMSAFE_KEYWORD_IGNORED "'.";
+                    MEMSAFE_KEYWORD_ERROR "', '" "', '" MEMSAFE_KEYWORD_WARNING "' or '" MEMSAFE_KEYWORD_IGNORED "'.";
 
             if (result.empty()) {
                 if (first.compare(STATUS) == 0) {
                     if (m_listStatus.find(second.begin()) == m_listStatus.end()) {
-                        static std::string status_list;
-                        if (status_list.empty()) {
-                            status_list = makeHelperString(m_listStatus);
-                        }
-                        result = "Unknown second argument '";
-                        result += first.begin();
-                        result += "'. Expected string from the following list: ";
-                        result += status_list;
+                        result = unknownArgumentHelper(second, m_listStatus);
                     } else {
                         if (m_status.empty()) {
                             result = "Violation of the logic of saving and restoring the state of the plugin";
@@ -814,6 +797,14 @@ namespace {
                             }
                         }
                     }
+                } else if (first.compare(LEVEL) == 0) {
+
+                    if (m_listLevel.find(second.begin()) == m_listLevel.end()) {
+                        result = unknownArgumentHelper(second, m_listLevel);
+                    } else if (!checkBehavior(second, &m_diagnostic_level)) {
+                        result = LEVEL_ERROR_MESSAGE;
+                    }
+
                 } else if (first.compare(PROFILE) == 0) {
                     if (!second.empty()) {
                         result = "Loading profile from file is not implemented!";
@@ -957,11 +948,11 @@ namespace {
                         line_base = getDiag().getSourceManager().getSpellingLineNumber(loc);
                         line_number = std::stoi(attr_args.second);
 
-                        if (logger) {
-                            clang::DiagnosticBuilder DB = getDiag().Report(loc, getDiag().getCustomDiagID(
-                                    DiagnosticsEngine::Note, "Mark baseline %0"));
-                            DB.AddString(std::to_string(line_number));
-                        }
+                        //                        if (logger) {
+                        //                            clang::DiagnosticBuilder DB = getDiag().Report(loc, getDiag().getCustomDiagID(
+                        //                                    DiagnosticsEngine::Note, "Mark baseline %0"));
+                        //                            DB.AddString(std::to_string(line_number));
+                        //                        }
 
                     } catch (...) {
                         getDiag().Report(decl->getLocation(), getDiag().getCustomDiagID(
@@ -1213,9 +1204,9 @@ namespace {
                         } else {
 
                             for (auto &elem : block_found->second) {
-                                llvm::outs() << elem.printToString(m_CI.getSourceManager()) << ": using main variable '" << block_found->first << "'\n";
+                                LogWarning(elem, std::format("using main variable '{}'", block_found->first));
                             }
-                            LogError(ref->getLocation(), std::format("Using the dependent variable '{}' after changing the main variable '{}'!", block_found->first, ref_name));
+                            LogError(ref->getLocation(), std::format("Using the dependent variable '{}' after changing the main variable '{}'!", ref_name, block_found->first));
                         }
                     }
                 }
@@ -1655,8 +1646,12 @@ namespace {
                         return false;
                     }
                 } else {
-                    llvm::errs() << "The argument '" << elem << "' is not supported via command line!\n";
-                    return false;
+                    if (first.compare("level") == 0) {
+                        // ok
+                    } else {
+                        llvm::errs() << "The argument '" << elem << "' is not supported via command line!\n";
+                        return false;
+                    }
                 }
             }
 

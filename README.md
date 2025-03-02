@@ -13,9 +13,9 @@ will necessarily break backward compatibility with existing legacy code.
 - Rewriting the entire existing C++ code base (if such standards were adopted) 
 is no cheaper than rewriting the same code in a new fashionable programming language.
 
-And the way out of this situation is to implement *safe C++ syntax* that would satisfy both of these requirements. 
-Moreover, the best option would be not to adopt any new C++ standards at all to change the vocabulary, 
-but to try to use the existing ones, adopted earlier.
+And the way out of this situation is to implement a *safe C++ syntax* that satisfies both of these requirements.
+Moreover, the best option would be to not adopt any new standards at all to change the C++ lexical 
+and try to use the existing C++ language standards that already exist at the moment.
 
 *Additional syntactic analysis by means of third-party applications (static analyzers, 
 for example, based on Clang-Tidy) **is not considered**, since any solution external 
@@ -247,7 +247,7 @@ If you have any suggestions for the development and improvement of the project, 
 И выходом из данной ситуации является реализация такого синтаксиса *безопасного С++*, 
 который бы позволил удовлетворить оба этих требования. Причем самый лучший вариант, 
 вообще не принимать какие либо новые стандарты С++ для изменения лексики, 
-а попробовать использовать уже существующие принятые ранее.
+а попробовать использовать уже существующие стандарты языка C++, которые уже есть в настоящий момент.
 
 *Дополнительный синтаксический анализ за счет сторонних приложений (статических анализаторов, 
 например, на базе Clang-Tidy) **не рассматривается**, так как любое внешнее по отношению к компилятору решение, 
@@ -258,18 +258,21 @@ If you have any suggestions for the development and improvement of the project, 
 ## Proof of Concept
 
 Данный репозиторий содержит код примера маркировки объектов С++ (типов, шаблонов и т.д.) 
-с помощью пользовательских атрибутов и их последующего лексического анализа с помощью плагина компилятора. 
-В качестве основы был использован прототип концепции [безопасной работы с памятью на С++](https://github.com/rsashka/memsafe/blob/main/memsafe_concept.md).
+с помощью пользовательских атрибутов и их последующего лексического анализа с помощью плагина компилятора.
+
+
+В качестве основы был использован прототип концепции [безопасной работы с памятью на С++](https://github.com/rsashka/memsafe/blob/main/memsafe_concept.md),
+который был дополнен контролем инвалидации ссылочных типов данных (контролем ссылок, которые переживают данные, на которые они ссылаются).
 
 Способ маркировки объектов в программном коде С++ с помощью атрибутов очень похож на предложенный в профилях безопасности 
 [p3038](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p3038r0.pdf) от Bjarne Stroustrup 
 и [P3081](https://isocpp.org/files/papers/P3081R0.pdf) от Herb Sutter, 
 но не требует разработки нового стандарта С++ (достаточно использовать уже существующий С++20).
 
-Ведь подобные дополнительные проверки с высокой долей вероятности не будут проходить для старого легаси кода, 
+Так как подобные дополнительные проверки кода с высокой долей вероятности не будут проходить у старого легаси кода, 
 поэтому их реализация с помощью отключаемых плагинов компилятора наиболее предпочтительна.
 
-Проект для безопасной работы с памятью на С++ сейчас реализован **частично**:
+Данный проект для безопасной работы с памятью на С++ сейчас реализован **частично**:
 - Используются стандартные средства разработки в виде плагина для компилятора 
 (плагин сделан под Clang, но GCC тоже позволяет использовать плагины)
 - Не нарушает обратной совместимости со старым исходным кодом, так как не изменяет лексику С++, 
@@ -282,6 +285,7 @@ If you have any suggestions for the development and improvement of the project, 
 Это немного похоже на концепцию [владения и заимствования из языка Rust](https://doc.rust-lang.org/book/ch04-00-understanding-ownership.html), 
 но реализованную на базе сильных и слабых ссылок (стандартных механизмов С++ *shared_ptr* и *weak_ptr*), 
 и поэтому полностью совместима с последним на низком уровне.
+- Описание контроля для инвалидации ссылочных типов данных приводится [тут](https://github.com/rsashka/memsafe/blob/main/memsafe_concept.md). 
 
 ### Отказ от ответственности
 

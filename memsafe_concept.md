@@ -1,7 +1,8 @@
 # Memory Safety сoncept in C++
 
-> The global problem of C and C++ languages ​​is that the pointer to the allocated memory block on the heap is an address
-in RAM and there is no connection between it and the variables - pointers that are in local variables on the stack.
+> The global problem of the C++ language is that a pointer to an allocated block of memory on the heap 
+is an address in RAM and there is no connection between it and the variables - pointers located in local variables on the stack, 
+the lifetime of which is controlled by the compiler.
 
 > The second, no less serious problem, which often leads to undefined behavior (Undefined Behavior) 
 or data races (Data Races) is access to the same memory area from different threads at the same time.
@@ -73,7 +74,8 @@ is only allowed between variables of the same lexical level.
 ## Концепция безопасной работы с памятью для С++
 
 > Глобальная проблема языков C и C++ в том, что указатель на выделенный блок памяти в куче является адресом 
-> в оперативной памяти и отсутствует его связь и переменными - указателями, которые находятся в локальных переменных на стеке. 
+> в оперативной памяти и отсутствует его связь и переменными - указателями, которые находятся в локальных переменных на стеке
+> временем жизни которых управляет компилятор. 
 > 
 > Вторая, не менее серьезная проблема, которая часто приводить к неопределенному поведению (Undefined Behaviour) 
 > или гонке данных (Data Races) - это доступ к одной и той же области памяти из разных потоков одновременно.

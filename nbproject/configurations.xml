@@ -28,6 +28,7 @@
                    displayName="Важные файлы"
                    projectFiles="false"
                    kind="IMPORTANT_FILES_FOLDER">
+      <itemPath>CHANGELOG.md</itemPath>
       <itemPath>LICENSE</itemPath>
       <itemPath>Makefile</itemPath>
       <itemPath>README.md</itemPath>
@@ -68,7 +69,7 @@
       </compileType>
       <item path="_example.cpp" ex="false" tool="1" flavor2="0">
         <ccTool>
-          <commandLine>-std=c++26 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -Xclang -plugin-arg-memsafe -Xclang log</commandLine>
+          <commandLine>-std=c++20 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -Xclang -plugin-arg-memsafe -Xclang log -Xclang -plugin-arg-memsafe -Xclang level=warning</commandLine>
           <additionalDep>memsafe_clang.so</additionalDep>
         </ccTool>
       </item>
