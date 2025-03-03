@@ -62,8 +62,16 @@ _example.cpp:31:27: error: Using the dependent variable 'beg' after changing the
 
 ```
 
+
+The plugin's message level can be limited using a macro or command line argument,
+or after checking the source code, the plugin can be omitted altogether,
+since it only parses the AST, but does not make any corrections to it.
+
+
+### Full output of plugin messages when compiling the test file `_example.cpp`: 
+
 <details>
-<summary>Full output of plugin messages when compiling the test file `_example.cpp`: </summary>
+<summary> Show output: </summary>
 
 ```bash
 clang++-20 -std=c++26 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe _example.cpp
@@ -140,11 +148,6 @@ _example.cpp:147:9: error: Return shared variable
 </details>
 
 
-The plugin's message level can be limited using a macro or command line argument,
-or after checking the source code, the plugin can be omitted altogether,
-since it only parses the AST, but does not make any corrections to it.
-
-
 ## Feedback
 If you have any suggestions for the development and improvement of the project, join or [write](https://github.com/rsashka/memsafe/discussions).
 
@@ -210,8 +213,15 @@ _example.cpp:31:27: error: Using the dependent variable 'beg' after changing the
       |                           ^
 ```
 
+
+Уровень сообщений плагина можно ограничить с помощью макроса или аргумента командной строки, 
+либо после проверки исходного кода плагин можно вообще не использовать,  
+поскольку он только анализирует AST, но не вносит в него никаких исправлений.
+
+
+### Полный вывод сообщений плагина при компиляции тестового файла `_example.cpp`:
 <details>
-<summary>Полный вывод сообщений плагина при компиляции тестового файла `_example.cpp`: </summary>
+<summary>Показать вывод</summary>
 
 ```bash
 clang++-20 -std=c++20 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe _example.cpp
@@ -286,11 +296,6 @@ _example.cpp:147:9: error: Return shared variable
 
 ```
 </details>
-
-
-Уровень сообщений плагина можно ограничить с помощью макроса или аргумента командной строки, 
-либо после проверки исходного кода плагин можно вообще не использовать,  
-поскольку он только анализирует AST, но не вносит в него никаких исправлений.
 
 
 ## Обратная связь
