@@ -36,10 +36,9 @@ was used, which was supplemented with control over invalidation of reference dat
 ```cpp
     std::vector<int> vec(100000, 0);
     auto x = vec.begin();
-    auto y = vec.end();
     vec = {};
     vec.shrink_to_fit(); 
-    std::sort(x, y); // malloc(): unaligned tcache chunk detected or Segmentation fault 
+    std::sort(x, vec.end()); // malloc(): unaligned tcache chunk detected or Segmentation fault 
 ```
 
 Command line to run compiler plugin `clang++-20 -std=c++20 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe _example.cpp` 
@@ -56,8 +55,8 @@ _example.cpp:29:17: warning: using main variable 'vect'
 _example.cpp:30:17: warning: using main variable 'vect'
    30 |                 vect.shrink_to_fit();
       |                 ^
-_example.cpp:31:27: error: Using the dependent variable 'beg' after changing the main variable 'vect'!
-   31 |                 std::sort(beg, vect.end()); // malloc(): unaligned tcache chunk detected or Segmentation fault 
+_example.cpp:31:27: error: Using the dependent variable 'x' after changing the main variable 'vect'!
+   31 |                 std::sort(x, vect.end()); // malloc(): unaligned tcache chunk detected or Segmentation fault 
       |                           ^
 
 ```
@@ -191,10 +190,9 @@ If you have any suggestions for the development and improvement of the project, 
 ```cpp
     std::vector<int> vec(100000, 0);
     auto x = vec.begin();
-    auto y = vec.end();
     vec = {};
     vec.shrink_to_fit(); 
-    std::sort(x, y); // malloc(): unaligned tcache chunk detected or Segmentation fault 
+    std::sort(x, vec.end()); // malloc(): unaligned tcache chunk detected or Segmentation fault
 ```
 
 Командная строка для запуска плагина компилятора `clang++ -std=c++20 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe _example.cpp` 
@@ -208,8 +206,8 @@ _example.cpp:29:17: warning: using main variable 'vect'
 _example.cpp:30:17: warning: using main variable 'vect'
    30 |                 vect.shrink_to_fit();
       |                 ^
-_example.cpp:31:27: error: Using the dependent variable 'beg' after changing the main variable 'vect'!
-   31 |                 std::sort(beg, vect.end()); // malloc(): unaligned tcache chunk detected or Segmentation fault 
+_example.cpp:31:27: error: Using the dependent variable 'x' after changing the main variable 'vect'!
+   31 |                 std::sort(x, vect.end()); // malloc(): unaligned tcache chunk detected or Segmentation fault 
       |                           ^
 ```
 
