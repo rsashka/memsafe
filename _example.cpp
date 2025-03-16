@@ -55,27 +55,27 @@ namespace ns {
     namespace MEMSAFE_UNSAFE {
 
         MEMSAFE_BASELINE(1000);
-        VarShared<int> var_unsafe1(1);
-        memsafe::VarShared<int> var_unsafe2(2);
-        memsafe::VarShared<int> var_unsafe3(3);
+        Shared<int> var_unsafe1(1);
+        memsafe::Shared<int> var_unsafe2(2);
+        memsafe::Shared<int> var_unsafe3(3);
     }
 
 
 
     MEMSAFE_BASELINE(2000);
-    memsafe::VarValue<int> var_value(1);
-    memsafe::VarValue<int> var_value2(2);
-    memsafe::VarShared<int> var_share(1);
-    memsafe::VarGuard<int, memsafe::VarSyncMutex> var_guard(1);
+    memsafe::Value<int> var_value(1);
+    memsafe::Value<int> var_value2(2);
+    memsafe::Shared<int> var_share(1);
+    memsafe::Shared<int, memsafe::SyncTimedMutex> var_guard(1);
 
     MEMSAFE_BASELINE(3000);
-    static memsafe::VarValue<int> var_static(1);
+    static memsafe::Value<int> var_static(1);
     static auto static_fail1(var_static.take()); // Error
     static auto static_fail2 = var_static.take(); // Error
 
     MEMSAFE_BASELINE(4000);
 
-    memsafe::VarShared<int> memory_test(memsafe::VarShared<int> arg, memsafe::VarValue<int> arg_val) {
+    memsafe::Shared<int> memory_test(memsafe::Shared<int> arg, memsafe::Value<int> arg_val) {
 
         MEMSAFE_BASELINE(4100);
         var_static = var_value;
@@ -87,8 +87,8 @@ namespace ns {
         }
 
         MEMSAFE_BASELINE(4200);
-        memsafe::VarShared<int> var_shared1(1);
-        memsafe::VarShared<int> var_shared2(1);
+        memsafe::Shared<int> var_shared1(1);
+        memsafe::Shared<int> var_shared2(1);
 
         MEMSAFE_BASELINE(4300);
         var_shared1 = var_shared1; // Error
@@ -96,14 +96,14 @@ namespace ns {
 
         {
             MEMSAFE_BASELINE(4400);
-            memsafe::VarShared<int> var_shared3(3);
+            memsafe::Shared<int> var_shared3(3);
             var_shared1 = var_shared1; // Error
             var_shared2 = var_shared1; // Error
             var_shared3 = var_shared1; // Error
 
             {
                 MEMSAFE_BASELINE(4500);
-                memsafe::VarShared<int> var_shared4 = var_shared1;
+                memsafe::Shared<int> var_shared4 = var_shared1;
 
                 var_shared1 = var_shared1; // Error
                 var_shared2 = var_shared1; // Error
@@ -142,16 +142,16 @@ namespace ns {
 
     MEMSAFE_BASELINE(8000);
 
-    memsafe::VarShared<int> memory_test_8(memsafe::VarShared<int> arg) {
+    memsafe::Shared<int> memory_test_8(memsafe::Shared<int> arg) {
         MEMSAFE_BASELINE(8900);
         return arg; // Error
     }
 
     MEMSAFE_BASELINE(9000);
-
-    memsafe::VarShared<int> memory_test_9() {
+    //    MEMSAFE_CREATE
+    memsafe::Shared<int> memory_test_9() {
         MEMSAFE_BASELINE(9900);
-        return VarShared<int>(999);
+        return Shared<int>(999);
     }
 }
 

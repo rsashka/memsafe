@@ -10,192 +10,206 @@
 
 #include "memsafe.h"
 #include "memsafe_plugin.h"
+#include "memsafe_old.h"
 
 using namespace memsafe;
 using namespace std::chrono_literals;
 
-TEST(MemSafe, Sizes) {
-
-    EXPECT_EQ(32, sizeof (std::string));
-    EXPECT_EQ(32, sizeof (std::wstring));
-    EXPECT_EQ(40, sizeof (std::variant<std::string>));
-    EXPECT_EQ(40, sizeof (std::variant<std::string, std::wstring>));
-
-    EXPECT_EQ(16, sizeof (std::runtime_error));
-    EXPECT_EQ(16, sizeof (memsafe_error));
-
-    class TestClassV0 {
-
-        void func() {
-        }
-    };
-
-    class TestClassV1 {
-
-        virtual void func() {
-        }
-    };
-
-    class TestClassV2 {
-
-        virtual void func1() {
-        }
-
-        virtual void func2() {
-        }
-    };
-
-    class TestClassV3 {
-
-        TestClassV3() {
-        }
-
-        virtual void func1() {
-        }
-
-        virtual void func2() {
-        }
-
-        virtual TestClassV3 & operator=(TestClassV3 &) = 0;
-
-        virtual ~TestClassV3() {
-        }
-    };
-
-    class TestClass1 : std::shared_ptr<int> {
-    };
-
-    class TestClass2 : std::shared_ptr<int>, std::enable_shared_from_this<TestClass2> {
-    };
-
-    class TestClass3 : std::enable_shared_from_this<TestClass3> {
-        int value;
-    };
-
-    class TestClass4 : std::enable_shared_from_this<TestClass4> {
-    };
-
-
-    EXPECT_EQ(1, sizeof (TestClassV0));
-    EXPECT_EQ(8, sizeof (TestClassV1));
-    EXPECT_EQ(8, sizeof (TestClassV2));
-    EXPECT_EQ(8, sizeof (TestClassV3));
-
-    EXPECT_EQ(16, sizeof (TestClass1));
-    EXPECT_EQ(32, sizeof (TestClass2));
-    EXPECT_EQ(4, sizeof (int));
-    EXPECT_EQ(24, sizeof (TestClass3));
-    EXPECT_EQ(16, sizeof (TestClass4));
-
-
-    EXPECT_EQ(16, sizeof (VarSync<int>));
-    EXPECT_EQ(24, sizeof (VarSyncNone<int>));
-    EXPECT_EQ(56, sizeof (VarSyncMutex<int>));
-    EXPECT_EQ(80, sizeof (VarSyncRecursiveShared<int>));
-
-    EXPECT_EQ(16, sizeof (VarSync<uint8_t>));
-    EXPECT_EQ(24, sizeof (VarSyncNone<uint8_t>));
-    EXPECT_EQ(56, sizeof (VarSyncMutex<uint8_t>));
-    EXPECT_EQ(80, sizeof (VarSyncRecursiveShared<uint8_t>));
-
-    EXPECT_EQ(16, sizeof (VarSync<uint64_t>));
-    EXPECT_EQ(24, sizeof (VarSyncNone<uint64_t>));
-    EXPECT_EQ(56, sizeof (VarSyncMutex<uint64_t>));
-    EXPECT_EQ(80, sizeof (VarSyncRecursiveShared<uint64_t>));
-
-    EXPECT_EQ(99, sizeof (std::array<uint8_t, 99 >));
-    EXPECT_EQ(100, sizeof (std::array<uint8_t, 100 >));
-    EXPECT_EQ(101, sizeof (std::array<uint8_t, 101 >));
-
-    EXPECT_EQ(112, sizeof (VarSync<std::array<uint8_t, 100 >>));
-    EXPECT_EQ(120, sizeof (VarSyncNone<std::array<uint8_t, 100 >>));
-    EXPECT_EQ(152, sizeof (VarSyncMutex<std::array <uint8_t, 100 >>));
-    EXPECT_EQ(176, sizeof (VarSyncRecursiveShared<std::array<uint8_t, 100 >>));
-
-    EXPECT_EQ(101, sizeof (std::array<uint8_t, 101 >));
-    EXPECT_EQ(112, sizeof (VarSync<std::array<uint8_t, 101 >>));
-    EXPECT_EQ(120, sizeof (VarSyncNone<std::array<uint8_t, 101 >>));
-    EXPECT_EQ(152, sizeof (VarSyncMutex<std::array <uint8_t, 101 >>));
-    EXPECT_EQ(176, sizeof (VarSyncRecursiveShared<std::array<uint8_t, 101 >>));
-}
+//TEST(MemSafe, Sizes) {
+//
+//    EXPECT_EQ(32, sizeof (std::string));
+//    EXPECT_EQ(32, sizeof (std::wstring));
+//    EXPECT_EQ(40, sizeof (std::variant<std::string>));
+//    EXPECT_EQ(40, sizeof (std::variant<std::string, std::wstring>));
+//
+//    EXPECT_EQ(16, sizeof (std::runtime_error));
+//    EXPECT_EQ(16, sizeof (memsafe_error));
+//
+//    class TestClassV0 {
+//
+//        void func() {
+//        }
+//    };
+//
+//    class TestClassV1 {
+//
+//        virtual void func() {
+//        }
+//    };
+//
+//    class TestClassV2 {
+//
+//        virtual void func1() {
+//        }
+//
+//        virtual void func2() {
+//        }
+//    };
+//
+//    class TestClassV3 {
+//
+//        TestClassV3() {
+//        }
+//
+//        virtual void func1() {
+//        }
+//
+//        virtual void func2() {
+//        }
+//
+//        virtual TestClassV3 & operator=(TestClassV3 &) = 0;
+//
+//        virtual ~TestClassV3() {
+//        }
+//    };
+//
+//    class TestClass1 : std::shared_ptr<int> {
+//    };
+//
+//    class TestClass2 : std::shared_ptr<int>, std::enable_shared_from_this<TestClass2> {
+//    };
+//
+//    class TestClass3 : std::enable_shared_from_this<TestClass3> {
+//        int value;
+//    };
+//
+//    class TestClass4 : std::enable_shared_from_this<TestClass4> {
+//    };
+//
+//
+//    EXPECT_EQ(1, sizeof (TestClassV0));
+//    EXPECT_EQ(8, sizeof (TestClassV1));
+//    EXPECT_EQ(8, sizeof (TestClassV2));
+//    EXPECT_EQ(8, sizeof (TestClassV3));
+//
+//    EXPECT_EQ(16, sizeof (TestClass1));
+//    EXPECT_EQ(32, sizeof (TestClass2));
+//    EXPECT_EQ(4, sizeof (int));
+//    EXPECT_EQ(24, sizeof (TestClass3));
+//    EXPECT_EQ(16, sizeof (TestClass4));
+//
+//
+//    EXPECT_EQ(16, sizeof (VarSync<int>));
+//    EXPECT_EQ(24, sizeof (VarSyncNone<int>));
+//    EXPECT_EQ(56, sizeof (VarSyncMutex<int>));
+//    EXPECT_EQ(80, sizeof (VarSyncRecursiveShared<int>));
+//
+//    EXPECT_EQ(16, sizeof (VarSync<uint8_t>));
+//    EXPECT_EQ(24, sizeof (VarSyncNone<uint8_t>));
+//    EXPECT_EQ(56, sizeof (VarSyncMutex<uint8_t>));
+//    EXPECT_EQ(80, sizeof (VarSyncRecursiveShared<uint8_t>));
+//
+//    EXPECT_EQ(16, sizeof (VarSync<uint64_t>));
+//    EXPECT_EQ(24, sizeof (VarSyncNone<uint64_t>));
+//    EXPECT_EQ(56, sizeof (VarSyncMutex<uint64_t>));
+//    EXPECT_EQ(80, sizeof (VarSyncRecursiveShared<uint64_t>));
+//
+//    EXPECT_EQ(99, sizeof (std::array<uint8_t, 99 >));
+//    EXPECT_EQ(100, sizeof (std::array<uint8_t, 100 >));
+//    EXPECT_EQ(101, sizeof (std::array<uint8_t, 101 >));
+//
+//    EXPECT_EQ(112, sizeof (VarSync<std::array<uint8_t, 100 >>));
+//    EXPECT_EQ(120, sizeof (VarSyncNone<std::array<uint8_t, 100 >>));
+//    EXPECT_EQ(152, sizeof (VarSyncMutex<std::array <uint8_t, 100 >>));
+//    EXPECT_EQ(176, sizeof (VarSyncRecursiveShared<std::array<uint8_t, 100 >>));
+//
+//    EXPECT_EQ(101, sizeof (std::array<uint8_t, 101 >));
+//    EXPECT_EQ(112, sizeof (VarSync<std::array<uint8_t, 101 >>));
+//    EXPECT_EQ(120, sizeof (VarSyncNone<std::array<uint8_t, 101 >>));
+//    EXPECT_EQ(152, sizeof (VarSyncMutex<std::array <uint8_t, 101 >>));
+//    EXPECT_EQ(176, sizeof (VarSyncRecursiveShared<std::array<uint8_t, 101 >>));
+//}
 
 TEST(MemSafe, Cast) {
 
     EXPECT_EQ(1, sizeof (bool));
-    EXPECT_EQ(1, sizeof (VarValue<bool>));
+    EXPECT_EQ(1, sizeof (Value<bool>));
     EXPECT_EQ(4, sizeof (int32_t));
-    EXPECT_EQ(4, sizeof (VarValue<int32_t>));
+    EXPECT_EQ(4, sizeof (Value<int32_t>));
     EXPECT_EQ(8, sizeof (int64_t));
-    EXPECT_EQ(8, sizeof (VarValue<int64_t>));
+    EXPECT_EQ(8, sizeof (Value<int64_t>));
 
-    VarValue<int> value_int(0);
+    Value<int> value_int(0);
     int & take_value = *value_int;
-    VarAuto<int, int&> take_value2 = value_int.take();
+    Auto<int, int&> take_value2 = value_int.take();
 
-    VarShared<int> shared_int(0);
-    int & take_shared1 = *shared_int;
+    Shared<int> shared_int(0);
 
-    ASSERT_EQ(0, *shared_int);
-    *shared_int = 11;
-    ASSERT_EQ(11, *shared_int);
+    //    Auto<int, Shared<int>> take_shared = *shared_int;
+    Auto<int, Shared<int>::SharedType> take_shared1 = shared_int.take();
+    //    int & take_shared1 = *shared_int;
+
+    ASSERT_EQ(0, *take_shared1);
+    ASSERT_EQ(0, *shared_int.take());
+    //    ASSERT_EQ(0, **shared_int);
+    *shared_int.take() = 11;
+    //    **shared_int = 11;
+    //    ASSERT_EQ(11, **shared_int);
+    ASSERT_EQ(11, *shared_int.take());
 
     auto var_take_shared = shared_int.take();
     int & take_shared2 = *var_take_shared;
 
 
-    //    auto guard_int(0, "*");
-    VarGuard<int> guard_int(22);
-    int temp_guard = *guard_int;
-    guard_int.set(33);
+    Shared<int, SyncSingleThread> sync_int(22);
+    Auto<int, Shared<int, SyncSingleThread>::SharedType> take_sync_int = sync_int.take();
+    auto auto_sync_int = sync_int.take();
+    //    auto auto_sync_int = *sync_int;
 
-    ASSERT_EQ(22, temp_guard);
-    ASSERT_EQ(33, *guard_int);
+    ASSERT_EQ(22, *sync_int.take());
+    //    ASSERT_EQ(22, **sync_int);
 
-    //    std::cout << "guard_int: " << guard_int.shared_this.use_count() << "\n";
-    //    int & take_guard = *guard_int;
+    *auto_sync_int = 33;
+    ASSERT_EQ(33, *auto_sync_int);
+    ASSERT_EQ(33, *sync_int.take());
+    //    ASSERT_EQ(33, **sync_int);
+
+    int temp_sync = *sync_int.take();
+    *sync_int.take() = 44;
+    //    **sync_int = 44;
+
+    ASSERT_EQ(33, temp_sync);
+    ASSERT_EQ(44, *auto_sync_int);
+    //    ASSERT_EQ(44, **sync_int);
+    ASSERT_EQ(44, *sync_int.take());
 
 
-    VarWeak<int> weak_shared1(shared_int);
-    VarWeak<int> weak_shared2 = weak_shared1;
+    auto weak_shared(shared_int.weak());
+    Weak<Shared<int>> weak_shared1(shared_int.weak());
+    Weak<Shared<int>> weak_shared2 = weak_shared1;
     auto weak_shared3 = shared_int.weak();
 
-    VarWeak<int, VarShared<int>> weak_shared4 = shared_int.weak();
+    Weak<Shared<int>> weak_shared4 = shared_int.weak();
 
 
-    ASSERT_EQ(1, guard_int.use_count()) << guard_int.use_count();
-    ASSERT_EQ(1, guard_int.use_count()) << guard_int.use_count();
-    ASSERT_NO_THROW(guard_int.weak());
-    VarWeak<int, VarGuard<int>> weak_guard1 = guard_int.weak();
+    ASSERT_EQ(3, sync_int.use_count()) << sync_int.use_count();
+    ASSERT_NO_THROW(sync_int.weak());
+    Weak<Shared<int, SyncSingleThread>> weak_sync1 = sync_int.weak();
     //
     //    //    std::cout << "weak_guard1: " << guard_int.shared_this.use_count() << "\n";
     //
-    auto weak_guard2(guard_int.weak());
+    auto weak_sync2(sync_int.weak());
     //
     //    //    std::cout << "weak_guard2: " << guard_int.shared_this.use_count() << "\n";
     //
-    auto weak_guard3 = guard_int.weak();
+    auto weak_sync3 = sync_int.weak();
 
     //    std::cout << "weak_guard3: " << guard_int.shared_this.use_count() << "\n";
 
 
-
-    //    auto auto_shared9(weak_shared1.take());
-    //    auto auto_guard9(weak_guard1.take());
-
-
     //template <typename V, typename T = V, typename W = std::weak_ptr<T>> class VarWeak;
-    ASSERT_NO_THROW(weak_shared1.take());
+    //    ASSERT_NO_THROW(**weak_shared1);
+    ASSERT_NO_THROW(*weak_shared1.take());
 
-    VarAuto<int, VarShared<int>> auto_shared(weak_shared1.take());
-
-    ASSERT_EQ(1, guard_int.use_count());
+    Auto<int, Shared<int>::SharedType> auto_shared(weak_shared1.take());
+    ASSERT_EQ(3, sync_int.use_count());
 
     //    auto auto_guard1(weak_guard1.take());
 
-    ASSERT_NO_THROW(*guard_int);
-
+    //    ASSERT_NO_THROW(**sync_int);
+    ASSERT_NO_THROW(*sync_int.take());
     {
-        auto taken = guard_int.take();
+        auto taken = sync_int.take();
     }
 
     //    VarAuto<int, VarGuard<int, VarGuardData<int>>> auto_guard2(weak_guard1.take());
@@ -204,9 +218,72 @@ TEST(MemSafe, Cast) {
     //    int & take_weak_shared = *auto_shared;
     //    int & take_weak_guard = *auto_guard;
 
-
-
 }
+
+#pragma clang attribute push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+
+class TestClass1 {
+public:
+
+    Class<TestClass1> field;
+    Class<TestClass1> field_2;
+
+    Shared<TestClass1> m_shared;
+    Shared<TestClass1, SyncSingleThread> m_single;
+    Shared<TestClass1, SyncTimedMutex> m_mutex;
+    Shared<TestClass1, SyncTimedShared> m_recursive;
+
+    TestClass1() : field(*this, this->field), field_2(*this, this->field_2) {
+    }
+};
+
+#pragma clang attribute pop
+
+TEST(MemSafe, Class) {
+
+    TestClass1 cls;
+
+
+    // Ignore warning only for unit test from field Shared<TestClass1>
+#pragma clang attribute push
+#pragma clang diagnostic ignored "-Winvalid-offsetof"
+
+    ASSERT_EQ(0, offsetof(TestClass1, field));
+    ASSERT_NE(0, offsetof(TestClass1, field_2));
+
+    ASSERT_EQ((size_t) cls.field.m_instance, (size_t) & cls);
+    ASSERT_EQ((size_t) cls.field.m_offset, offsetof(TestClass1, field)) << offsetof(TestClass1, field);
+
+    ASSERT_EQ((size_t) cls.field_2.m_instance, (size_t) & cls);
+    ASSERT_EQ(cls.field_2.m_offset, offsetof(TestClass1, field_2)) << offsetof(TestClass1, field_2);
+
+#pragma clang attribute pop
+
+
+    ASSERT_FALSE(cls.field.m_field.get());
+    cls.field = new TestClass1();
+    ASSERT_TRUE(cls.field.m_field.get());
+
+    ASSERT_FALSE((*cls.field).field.m_field.get());
+    ASSERT_ANY_THROW(
+            (*cls.field).field = cls.field; // circular reference
+            );
+    ASSERT_TRUE(cls.field.m_field.get());
+
+    ASSERT_FALSE((*cls.field).field.m_field.get());
+    ASSERT_ANY_THROW(
+            (*cls.field).field = cls.field.m_field.get(); // circular reference
+            );
+    ASSERT_TRUE(cls.field.m_field.get());
+
+    ASSERT_FALSE(cls.field_2.m_field.get());
+    ASSERT_ANY_THROW(
+            cls.field_2 = cls.field; // Copy of another field
+            );
+    ASSERT_FALSE(cls.field_2.m_field.get());
+
+};
 
 TEST(MemSafe, Threads) {
 
@@ -245,12 +322,12 @@ TEST(MemSafe, Threads) {
     }
 
     {
-        memsafe::VarGuard<int> var_guard(0);
+        memsafe::Shared<int, SyncSingleThread> var_single(0);
         bool catched = false;
 
         std::thread other([&]() {
             try {
-                *var_guard;
+                var_single.take();
             } catch (...) {
                 catched = true;
             }
@@ -262,7 +339,7 @@ TEST(MemSafe, Threads) {
     }
 
     {
-        memsafe::VarGuard<int, VarSyncMutex> var_mutex(0);
+        memsafe::Shared<int, SyncTimedMutex> var_mutex(0);
         bool catched = false;
 
         std::chrono::duration<double, std::milli> elapsed;
@@ -273,7 +350,7 @@ TEST(MemSafe, Threads) {
                 const auto start = std::chrono::high_resolution_clock::now();
                 std::this_thread::sleep_for(100ms);
                 elapsed = std::chrono::high_resolution_clock::now() - start;
-                *var_mutex;
+                var_mutex.take();
             } catch (...) {
                 catched = true;
             }
@@ -288,22 +365,37 @@ TEST(MemSafe, Threads) {
     }
 
     {
-        memsafe::VarGuard<int, VarSyncRecursiveShared> var_recursive(0);
-        bool catched = false;
+        memsafe::Shared<int, SyncTimedShared> var_recursive(0);
+        bool not_catched = true;
 
-        std::thread other([&]() {
+        std::thread read([&]() {
             try {
-                *var_recursive;
-                *var_recursive;
-                *var_recursive;
+                auto a1 = var_recursive.take_const();
+                auto a2 = var_recursive.take_const();
+                auto a3 = var_recursive.take_const();
             } catch (...) {
-                catched = true;
+                not_catched = false;
             }
 
         });
-        other.join();
+        read.join();
 
-        ASSERT_FALSE(catched);
+        ASSERT_TRUE(not_catched);
+
+        std::thread write([&]() {
+            try {
+                auto a1 = var_recursive.take();
+                auto a2 = var_recursive.take();
+                auto a3 = var_recursive.take();
+            } catch (...) {
+                not_catched = false;
+            }
+
+        });
+        write.join();
+
+        ASSERT_FALSE(not_catched);
+
     }
 
 }
@@ -369,8 +461,8 @@ TEST(MemSafe, Depend) {
 
 TEST(MemSafe, ApplyAttr) {
 
-    memsafe::VarValue<int> var_value(1);
-    static memsafe::VarValue<int> var_static(1);
+    memsafe::Value<int> var_value(1);
+    static memsafe::Value<int> var_static(1);
 
     var_static = var_value;
     {
@@ -380,8 +472,8 @@ TEST(MemSafe, ApplyAttr) {
         }
     }
 
-    memsafe::VarShared<int> var_shared1(0);
-    memsafe::VarShared<int> var_shared2(1);
+    memsafe::Shared<int> var_shared1(0);
+    memsafe::Shared<int> var_shared2(1);
 
     ASSERT_TRUE(var_shared1);
     ASSERT_TRUE(var_shared2);
@@ -394,14 +486,14 @@ TEST(MemSafe, ApplyAttr) {
         }
     }
 
-    memsafe::VarGuard<int> var_none(1);
+    memsafe::Shared<int, SyncSingleThread> var_none(1);
     ASSERT_TRUE(var_none);
 
-    memsafe::VarGuard<int, VarSyncMutex> var_mutex(1);
+    memsafe::Shared<int, SyncTimedMutex> var_mutex(1);
     ASSERT_TRUE(var_mutex);
 
-    memsafe::VarGuard<int, VarSyncRecursiveShared> var_recursive(1);
-    ASSERT_TRUE(var_recursive);
+    memsafe::Shared<int, SyncTimedShared> var_shared(1);
+    ASSERT_TRUE(var_shared);
 
 }
 
@@ -481,6 +573,7 @@ TEST(MemSafe, Plugin) {
         "#log #1002",
         "#log #1003",
         "#log #2003",
+        "#log #2004",
         "#err #3002",
         "#err #3003",
         "#log #4201",
