@@ -10,115 +10,146 @@
 
 #include "memsafe.h"
 #include "memsafe_plugin.h"
-#include "memsafe_old.h"
 
 using namespace memsafe;
 using namespace std::chrono_literals;
 
-//TEST(MemSafe, Sizes) {
-//
-//    EXPECT_EQ(32, sizeof (std::string));
-//    EXPECT_EQ(32, sizeof (std::wstring));
-//    EXPECT_EQ(40, sizeof (std::variant<std::string>));
-//    EXPECT_EQ(40, sizeof (std::variant<std::string, std::wstring>));
-//
-//    EXPECT_EQ(16, sizeof (std::runtime_error));
-//    EXPECT_EQ(16, sizeof (memsafe_error));
-//
-//    class TestClassV0 {
-//
-//        void func() {
-//        }
-//    };
-//
-//    class TestClassV1 {
-//
-//        virtual void func() {
-//        }
-//    };
-//
-//    class TestClassV2 {
-//
-//        virtual void func1() {
-//        }
-//
-//        virtual void func2() {
-//        }
-//    };
-//
-//    class TestClassV3 {
-//
-//        TestClassV3() {
-//        }
-//
-//        virtual void func1() {
-//        }
-//
-//        virtual void func2() {
-//        }
-//
-//        virtual TestClassV3 & operator=(TestClassV3 &) = 0;
-//
-//        virtual ~TestClassV3() {
-//        }
-//    };
-//
-//    class TestClass1 : std::shared_ptr<int> {
-//    };
-//
-//    class TestClass2 : std::shared_ptr<int>, std::enable_shared_from_this<TestClass2> {
-//    };
-//
-//    class TestClass3 : std::enable_shared_from_this<TestClass3> {
-//        int value;
-//    };
-//
-//    class TestClass4 : std::enable_shared_from_this<TestClass4> {
-//    };
-//
-//
-//    EXPECT_EQ(1, sizeof (TestClassV0));
-//    EXPECT_EQ(8, sizeof (TestClassV1));
-//    EXPECT_EQ(8, sizeof (TestClassV2));
-//    EXPECT_EQ(8, sizeof (TestClassV3));
-//
-//    EXPECT_EQ(16, sizeof (TestClass1));
-//    EXPECT_EQ(32, sizeof (TestClass2));
-//    EXPECT_EQ(4, sizeof (int));
-//    EXPECT_EQ(24, sizeof (TestClass3));
-//    EXPECT_EQ(16, sizeof (TestClass4));
-//
-//
-//    EXPECT_EQ(16, sizeof (VarSync<int>));
-//    EXPECT_EQ(24, sizeof (VarSyncNone<int>));
-//    EXPECT_EQ(56, sizeof (VarSyncMutex<int>));
-//    EXPECT_EQ(80, sizeof (VarSyncRecursiveShared<int>));
-//
-//    EXPECT_EQ(16, sizeof (VarSync<uint8_t>));
-//    EXPECT_EQ(24, sizeof (VarSyncNone<uint8_t>));
-//    EXPECT_EQ(56, sizeof (VarSyncMutex<uint8_t>));
-//    EXPECT_EQ(80, sizeof (VarSyncRecursiveShared<uint8_t>));
-//
-//    EXPECT_EQ(16, sizeof (VarSync<uint64_t>));
-//    EXPECT_EQ(24, sizeof (VarSyncNone<uint64_t>));
-//    EXPECT_EQ(56, sizeof (VarSyncMutex<uint64_t>));
-//    EXPECT_EQ(80, sizeof (VarSyncRecursiveShared<uint64_t>));
-//
-//    EXPECT_EQ(99, sizeof (std::array<uint8_t, 99 >));
-//    EXPECT_EQ(100, sizeof (std::array<uint8_t, 100 >));
-//    EXPECT_EQ(101, sizeof (std::array<uint8_t, 101 >));
-//
-//    EXPECT_EQ(112, sizeof (VarSync<std::array<uint8_t, 100 >>));
-//    EXPECT_EQ(120, sizeof (VarSyncNone<std::array<uint8_t, 100 >>));
-//    EXPECT_EQ(152, sizeof (VarSyncMutex<std::array <uint8_t, 100 >>));
-//    EXPECT_EQ(176, sizeof (VarSyncRecursiveShared<std::array<uint8_t, 100 >>));
-//
-//    EXPECT_EQ(101, sizeof (std::array<uint8_t, 101 >));
-//    EXPECT_EQ(112, sizeof (VarSync<std::array<uint8_t, 101 >>));
-//    EXPECT_EQ(120, sizeof (VarSyncNone<std::array<uint8_t, 101 >>));
-//    EXPECT_EQ(152, sizeof (VarSyncMutex<std::array <uint8_t, 101 >>));
-//    EXPECT_EQ(176, sizeof (VarSyncRecursiveShared<std::array<uint8_t, 101 >>));
-//}
+TEST(MemSafe, Sizes) {
+
+    EXPECT_EQ(32, sizeof (std::string));
+    EXPECT_EQ(32, sizeof (std::wstring));
+    EXPECT_EQ(40, sizeof (std::variant<std::string>));
+    EXPECT_EQ(40, sizeof (std::variant<std::string, std::wstring>));
+
+    EXPECT_EQ(16, sizeof (std::runtime_error));
+    EXPECT_EQ(16, sizeof (memsafe_error));
+
+    class TestClassV0 {
+
+        void func() {
+        }
+    };
+
+    class TestClassV1 {
+
+        virtual void func() {
+        }
+    };
+
+    class TestClassV2 {
+
+        virtual void func1() {
+        }
+
+        virtual void func2() {
+        }
+    };
+
+    class TestClassV3 {
+
+        TestClassV3() {
+        }
+
+        virtual void func1() {
+        }
+
+        virtual void func2() {
+        }
+
+        virtual TestClassV3 & operator=(TestClassV3 &) = 0;
+
+        virtual ~TestClassV3() {
+        }
+    };
+
+    class TestClass1 : std::shared_ptr<int> {
+    };
+
+    class TestClass2 : std::shared_ptr<int>, std::enable_shared_from_this<TestClass2> {
+    };
+
+    class TestClass3 : std::enable_shared_from_this<TestClass3> {
+        int value;
+    };
+
+    class TestClass4 : std::enable_shared_from_this<TestClass4> {
+    };
+
+
+    EXPECT_EQ(1, sizeof (TestClassV0));
+    EXPECT_EQ(8, sizeof (TestClassV1));
+    EXPECT_EQ(8, sizeof (TestClassV2));
+    EXPECT_EQ(8, sizeof (TestClassV3));
+
+    EXPECT_EQ(16, sizeof (TestClass1));
+    EXPECT_EQ(32, sizeof (TestClass2));
+    EXPECT_EQ(4, sizeof (int));
+    EXPECT_EQ(24, sizeof (TestClass3));
+    EXPECT_EQ(16, sizeof (TestClass4));
+
+
+    EXPECT_EQ(16, sizeof (Sync<int>));
+    EXPECT_EQ(24, sizeof (SyncSingleThread<int>));
+    EXPECT_EQ(56, sizeof (SyncTimedMutex<int>));
+    EXPECT_EQ(72, sizeof (SyncTimedShared<int>));
+
+    EXPECT_EQ(16, sizeof (Sync<uint8_t>));
+    EXPECT_EQ(24, sizeof (SyncSingleThread<uint8_t>));
+    EXPECT_EQ(56, sizeof (SyncTimedMutex<uint8_t>));
+    EXPECT_EQ(72, sizeof (SyncTimedShared<uint8_t>));
+
+    EXPECT_EQ(24, sizeof (Sync<uint64_t>));
+    EXPECT_EQ(32, sizeof (SyncSingleThread<uint64_t>));
+    EXPECT_EQ(64, sizeof (SyncTimedMutex<uint64_t>));
+    EXPECT_EQ(80, sizeof (SyncTimedShared<uint64_t>));
+
+    EXPECT_EQ(99, sizeof (std::array<uint8_t, 99 >));
+    EXPECT_EQ(100, sizeof (std::array<uint8_t, 100 >));
+    EXPECT_EQ(101, sizeof (std::array<uint8_t, 101 >));
+
+    EXPECT_EQ(112, sizeof (Sync<std::array<uint8_t, 100 >>));
+    EXPECT_EQ(120, sizeof (SyncSingleThread<std::array<uint8_t, 100 >>));
+    EXPECT_EQ(152, sizeof (SyncTimedMutex<std::array <uint8_t, 100 >>));
+    EXPECT_EQ(168, sizeof (SyncTimedShared<std::array<uint8_t, 100 >>));
+
+    EXPECT_EQ(101, sizeof (std::array<uint8_t, 101 >));
+    EXPECT_EQ(112, sizeof (Sync<std::array<uint8_t, 101 >>));
+    EXPECT_EQ(120, sizeof (SyncSingleThread<std::array<uint8_t, 101 >>));
+    EXPECT_EQ(152, sizeof (SyncTimedMutex<std::array <uint8_t, 101 >>));
+    EXPECT_EQ(168, sizeof (SyncTimedShared<std::array<uint8_t, 101 >>));
+
+
+    EXPECT_EQ(16, sizeof (Shared<int>));
+    EXPECT_EQ(16, sizeof (Shared<int, SyncSingleThread>));
+    EXPECT_EQ(16, sizeof (Shared<int, SyncTimedMutex>));
+    EXPECT_EQ(16, sizeof (Shared<int, SyncTimedShared>));
+
+    EXPECT_EQ(16, sizeof (Shared<uint8_t>));
+    EXPECT_EQ(16, sizeof (Shared<uint8_t, SyncSingleThread>));
+    EXPECT_EQ(16, sizeof (Shared<uint8_t, SyncTimedMutex>));
+    EXPECT_EQ(16, sizeof (Shared<uint8_t, SyncTimedShared>));
+
+    EXPECT_EQ(16, sizeof (Shared<uint8_t>));
+    EXPECT_EQ(16, sizeof (Shared<uint8_t, SyncSingleThread>));
+    EXPECT_EQ(16, sizeof (Shared<uint8_t, SyncTimedMutex>));
+    EXPECT_EQ(16, sizeof (Shared<uint8_t, SyncTimedShared>));
+
+    EXPECT_EQ(16, sizeof (Weak<Shared<int>>));
+    EXPECT_EQ(16, sizeof (Weak<Shared<int, SyncSingleThread>>));
+    EXPECT_EQ(16, sizeof (Weak<Shared<int, SyncTimedMutex>>));
+    EXPECT_EQ(16, sizeof (Weak<Shared<int, SyncTimedShared>>));
+
+    EXPECT_EQ(16, sizeof (Auto<int, Shared<int>>));
+    EXPECT_EQ(16, sizeof (Auto<int, Shared<int, SyncSingleThread>>));
+    EXPECT_EQ(16, sizeof (Auto<int, Shared<int, SyncTimedMutex>>));
+    EXPECT_EQ(16, sizeof (Auto<int, Shared<int, SyncTimedShared>>));
+
+    EXPECT_EQ(8, sizeof (Auto<int, int&>));
+    EXPECT_EQ(8, sizeof (Auto<uint8_t, uint8_t&>));
+    EXPECT_EQ(8, sizeof (Auto<uint16_t, uint16_t&>));
+    EXPECT_EQ(8, sizeof (Auto<uint32_t, uint32_t&>));
+    EXPECT_EQ(8, sizeof (Auto<uint64_t, uint64_t&>));
+}
 
 TEST(MemSafe, Cast) {
 
@@ -548,12 +579,17 @@ TEST(MemSafe, Plugin) {
 
     std::multiset<std::string> diag({
         "#log #201",
+        "#log #201",
+        "#log #202",
         "#log #202",
         "#log #202",
         "#err #204",
+        "#err #204",
+        "#log #207",
         "#log #207",
         "#log #208",
         "#warn #208",
+        "#err #209",
         "#err #209",
         "#warn #301",
         "#log #301",
@@ -575,7 +611,13 @@ TEST(MemSafe, Plugin) {
         "#log #2003",
         "#log #2004",
         "#err #3002",
+        "#log #3002",
         "#err #3003",
+        "#log #3003",
+        "#log #3003",
+        "#log #4101",
+        "#log #4103",
+        "#log #4105",
         "#log #4201",
         "#log #4202",
         "#err #4301",
@@ -584,13 +626,13 @@ TEST(MemSafe, Plugin) {
         "#log #4401",
         "#err #4402",
         "#err #4403",
-        "#err #4404",
+        "#log #4404",
         "#log #4501",
         "#err #4503",
         "#err #4504",
-        "#err #4505",
-        "#err #4507",
-        "#err #4508",
+        "#log #4505",
+        "#log #4507",
+        "#log #4508",
         "#err #4510",
         "#log #4513",
         "#warn #4513",
@@ -602,8 +644,25 @@ TEST(MemSafe, Plugin) {
         "#err #4701",
         "#log #4703",
         "#log #4801",
+        "#err #7003",
+        "#log #7004",
+        "#log #7005",
+        "#err #7006",
+        "#log #7007",
+        "#log #7009",
+        "#err #7010",
+        "#log #7011",
+        "#err #7012",
         "#err #8901",
         "#log #9901",
+        "#err #10004",
+        "#err #10005",
+        "#err #10008",
+        "#err #10009",
+        "#warn #10013",
+        "#warn #10014",
+        "#warn #10015",
+        "#warn #10016",
     });
 
     size_t line;

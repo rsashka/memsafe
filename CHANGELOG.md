@@ -1,5 +1,19 @@
 # Version history
 
+
+## Release v0.3 (17.03.2025)
+- Refactor the library interface to simplify inheritance:    
+    - Сombined *shared* and *guard* variables into one template class
+    - Pointer data types with invalidation control are merged with automatic data types
+- Add restriction on using reference types as the data type of variables has been added to templates.
+- The plugin has new checks for reference types of class fields
+- Fixed checking for use of unwanted (warning) and forbidden (error) classes
+- Added control of reference types (pointers)
+- New tests added and project description reworked
+
+------
+
+
 ## Release v0.2 (02.03.2025)
 - Added invalidation analysis of reference data types
 - Memory safety library adapted for C++

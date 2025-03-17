@@ -99,7 +99,7 @@ namespace ns {
             memsafe::Shared<int> var_shared3(3);
             var_shared1 = var_shared1; // Error
             var_shared2 = var_shared1; // Error
-            var_shared3 = var_shared1; // Error
+            var_shared3 = var_shared1;
 
             {
                 MEMSAFE_BASELINE(4500);
@@ -107,10 +107,10 @@ namespace ns {
 
                 var_shared1 = var_shared1; // Error
                 var_shared2 = var_shared1; // Error
-                var_shared3 = var_shared1; // Error
+                var_shared3 = var_shared1;
 
-                var_shared4 = var_shared1; // Error
-                var_shared4 = var_shared3; // Error
+                var_shared4 = var_shared1;
+                var_shared4 = var_shared3;
 
                 var_shared4 = var_shared4; // Error
 
@@ -140,6 +140,22 @@ namespace ns {
         return 777;
     }
 
+    MEMSAFE_BASELINE(7000);
+
+    void shared_example() {
+        std::shared_ptr<int> old_shared; // Error
+        Shared<int> var = 1;
+        Shared<int> copy;
+        copy = var; // Error
+        std::swap(var, copy);
+        {
+            Shared<int> inner = var;
+            std::swap(inner, copy); // Error
+            inner = copy;
+            copy = inner; // Error
+        }
+    }
+
     MEMSAFE_BASELINE(8000);
 
     memsafe::Shared<int> memory_test_8(memsafe::Shared<int> arg) {
@@ -148,10 +164,33 @@ namespace ns {
     }
 
     MEMSAFE_BASELINE(9000);
-    //    MEMSAFE_CREATE
+
     memsafe::Shared<int> memory_test_9() {
         MEMSAFE_BASELINE(9900);
         return Shared<int>(999);
     }
+
+
+
+
+    MEMSAFE_BASELINE(10000);
+
+    class RecursiveRef {
+    public:
+        RecursiveRef * ref_pointer; // Error
+        std::shared_ptr<RecursiveRef> ref_shared; // Error
+        std::weak_ptr<RecursiveRef> ref_weak;
+
+        Auto<int, int&> ref_int; // Error
+        Shared<RecursiveRef> recursive; // Error
+        Weak<Shared<RecursiveRef>> ref_weak2;
+        Class<RecursiveRef> reference;
+
+        MEMSAFE_UNSAFE RecursiveRef * unsafe_pointer; // Unsafe
+        MEMSAFE_UNSAFE std::shared_ptr<RecursiveRef> unsafe_shared; // Unsafe
+        MEMSAFE_UNSAFE Auto<int, int&> unsafe_ref_int; // Unsafe
+        MEMSAFE_UNSAFE Shared<RecursiveRef> unsafe_recursive; // Unsafe
+    };
+
 }
 

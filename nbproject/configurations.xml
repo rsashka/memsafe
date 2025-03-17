@@ -17,7 +17,6 @@
     <logicalFolder name="ResourceFiles"
                    displayName="Файлы ресурсов"
                    projectFiles="true">
-      <itemPath>_example.cpp.memsafe</itemPath>
     </logicalFolder>
     <logicalFolder name="TestFiles"
                    displayName="Файлы тестов"
@@ -32,8 +31,6 @@
       <itemPath>LICENSE</itemPath>
       <itemPath>Makefile</itemPath>
       <itemPath>README.md</itemPath>
-      <itemPath>memsafe_concept.md</itemPath>
-      <itemPath>memsafe_invalidate.md</itemPath>
     </logicalFolder>
   </logicalFolder>
   <projectmakefile>Makefile</projectmakefile>
@@ -73,8 +70,6 @@
           <additionalDep>memsafe_clang.so</additionalDep>
         </ccTool>
       </item>
-      <item path="_example.cpp.memsafe" ex="false" tool="3" flavor2="0">
-      </item>
       <item path="memsafe.h" ex="false" tool="3" flavor2="0">
       </item>
       <item path="memsafe_clang.cpp" ex="false" tool="3" flavor2="0">
@@ -101,8 +96,6 @@
       <compileType>
       </compileType>
       <item path="_example.cpp" ex="false" tool="1" flavor2="0">
-      </item>
-      <item path="_example.cpp.memsafe" ex="false" tool="3" flavor2="0">
       </item>
       <item path="memsafe.h" ex="false" tool="3" flavor2="0">
       </item>
@@ -134,8 +127,6 @@
         </asmTool>
       </compileType>
       <item path="_example.cpp" ex="false" tool="1" flavor2="0">
-      </item>
-      <item path="_example.cpp.memsafe" ex="false" tool="3" flavor2="0">
       </item>
       <item path="memsafe.h" ex="false" tool="3" flavor2="0">
       </item>

@@ -39,7 +39,6 @@
 #define MEMSAFE_KEYWORD_PRINT_AST "print-ast"
 #define MEMSAFE_KEYWORD_PRINT_DUMP "print-dump"
 #define MEMSAFE_KEYWORD_BASELINE "baseline"
-#define MEMSAFE_KEYWORD_CREATE "create"
 
 #define MEMSAFE_KEYWORD_START_LOG "#memsafe-log\n"
 #define MEMSAFE_KEYWORD_START_DUMP "#memsafe-dump\n"
@@ -57,12 +56,8 @@
 #define MEMSAFE_KEYWORD_REMARK "remark"
 #define MEMSAFE_KEYWORD_IGNORED "ignored"
 
-#define MEMSAFE_KEYWORD_NONCONST_ARG "nonconst-arg"
-#define MEMSAFE_KEYWORD_NONCONST_METHOD "nonconst-method"
-
 #define MEMSAFE_KEYWORD_AUTO_TYPE "auto-type"
 #define MEMSAFE_KEYWORD_SHARED_TYPE "shared-type"
-#define MEMSAFE_KEYWORD_POINTER_TYPE  "pointer-type"
 #define MEMSAFE_KEYWORD_INVALIDATE_FUNC  "invalidate-func"
 
 
@@ -89,17 +84,12 @@
 #define MEMSAFE_STATUS(status) MEMSAFE_ATTR(MEMSAFE_KEYWORD_STATUS, status)
 #define MEMSAFE_DIAG_LEVEL(level) MEMSAFE_ATTR(MEMSAFE_KEYWORD_LEVEL, level)
 #define MEMSAFE_UNSAFE MEMSAFE_ATTR(MEMSAFE_KEYWORD_UNSAFE, TO_STR(__LINE__))
-#define MEMSAFE_CREATE MEMSAFE_ATTR(MEMSAFE_KEYWORD_CREATE, TO_STR(__LINE__))
 
 #define MEMSAFE_ERROR_TYPE(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_ERROR "-type", name)
 #define MEMSAFE_WARNING_TYPE(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_WARNING "-type", name)
 #define MEMSAFE_AUTO_TYPE(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_AUTO_TYPE, name)
 #define MEMSAFE_SHARED_TYPE(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_SHARED_TYPE, name)
-#define MEMSAFE_POINTER_TYPE(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_POINTER_TYPE, name)
 #define MEMSAFE_INVALIDATE_FUNC(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_INVALIDATE_FUNC, name)
-
-#define MEMSAFE_NONCONST_ARG(status) MEMSAFE_ATTR(MEMSAFE_KEYWORD_NONCONST_ARG, status)
-#define MEMSAFE_NONCONST_METHOD(status) MEMSAFE_ATTR(MEMSAFE_KEYWORD_NONCONST_METHOD, status)
 
 #define MEMSAFE_PRINT_AST(filter) MEMSAFE_ATTR(MEMSAFE_KEYWORD_PRINT_AST, filter) void memsafe_stub();
 #define MEMSAFE_PRINT_DUMP(filter) MEMSAFE_ATTR(MEMSAFE_KEYWORD_PRINT_DUMP, filter) void memsafe_stub();
@@ -188,30 +178,6 @@
  */
 
 /**
- * @def MEMSAFE_POINTER_FUNC("unsafe data type")
- * 
- * An unsafe data type that can be corrupted if data in the underlying object is modified.
- * i.e. __gnu_cxx::__normal_iterator, std::reverse_iterator, std::basic_string_view, std::span and etc.
- */
-
-
-/**
- * @def MEMSAFE_NONCONST_METHOD( level )
- * 
- * Default behavior when calling a method of a class that has both a const and non-const variant of the underlying object
- * 
- * @arg level - one of the possible meanings: "error", "warning", "note", "remark" or "ignored"
- */
-
-/**
- * @def MEMSAFE_NONCONST_ARG( level )
- * 
- * Default behavior when passing a underlying object with a given object as a non-const argument to a function
- * 
- * @arg level - one of the possible meanings: "error", "warning", "note", "remark" or "ignored"
- */
-
-/**
  * @def MEMSAFE_INVALIDATE_FUNC("unsafe function name")
  * The name of a function that, when passed as an argument to a base object, 
  * always causes previously obtained references and iterators to be invalidated,
@@ -234,32 +200,11 @@ namespace memsafe { // Begin define memory safety classes
 
 #endif
 
-    //    // Pre-definition of templates 
-    //
-    //    // Wrapper around the standard std::shared_ptr and std::unique_ptr template operators to throw an exception when accessing nullptr
-    //    template <typename V> class shared_ptr;
-    //    template <typename V> class unique_ptr;
-    //
-    //    // Base virtual classes of multithreaded synchronization primitives with a uniform interface
-    //    template <typename V> class VarSync;
-    //    // A class without a synchronization primitive, but with the ability to work only in one application thread
-    //    template <typename V> class VarSyncNone;
-    //    // Class with mutex for simple multithreaded synchronization
-    //    template <typename V> class VarSyncMutex;
-    //    // Recursive shared_mutex for multi-thread synchronization for exclusive read/write lock or shared read-only lock
-    //    template <typename V> class VarSyncRecursiveShared;
-    //
-    //    // Template class for a shared variable
-    //    template <typename V> class VarShared;
-    //    // Template class for guard variable
-    //    template <typename V, template <typename> typename S = VarSyncNone > class VarGuard;
-    //    template <typename V, template <typename> typename S = VarSyncNone > class Guard;
-
-    // Template class for variable with weak reference
+    // Pre-definition of template class for variable with weak reference
     template <typename T> class Weak;
 
     /*
-     * Basic abstract interface template for multithreaded synchronization for data access
+     * Base class for shared data with the ability to multi-thread synchronize access
      */
 
     typedef std::chrono::milliseconds SyncTimeoutType;
@@ -318,7 +263,7 @@ namespace memsafe { // Begin define memory safety classes
     };
 
     /**
-     * Temporary variable - owner of object reference (dereferences weak pointers 
+     * Temporary (auto) variable - owner of object reference (dereferences weak pointers 
      * and increments ownership count of strong references).
      * 
      * Always contains only valid data (a valid reference and a captured synchronization object), 
@@ -331,32 +276,10 @@ namespace memsafe { // Begin define memory safety classes
      * V - Variable value type
      * T - The type of the specific captured variable
      */
-    //    template <typename V, typename T, template <typename> typename S = VarSync >
-    //    class VarAuto {
-    //    protected:
-    //        T taken; // memsafe::shared_ptr<V> or memsafe::shared_ptr<VarGuard<V>>
-    //    public:
-    //
-    //        VarAuto(T arg, const SyncTimeoutType &timeout = VarSync<V>::SyncTimeoutDeedlock);
-    //
-    //        virtual ~VarAuto();
-    //
-    //        inline V& operator*();
-    //        inline const V& operator*() const;
-    //    };
-
-    /*
-     * 
-     * 
-     */
-
-
 
     template <typename V, typename T>
     class Auto {
     public:
-
-        T value; // Type T can be a reference to data i.e. V& or a shared_ptr<Sync<V>>
 
         Auto(T val) : value(val) {
         }
@@ -379,71 +302,24 @@ namespace memsafe { // Begin define memory safety classes
             }
         }
 
-        virtual ~Auto() {
+        inline ~Auto() {
             if constexpr (std::is_convertible_v<T, std::shared_ptr<Sync < V>>>) {
                 value->UnLock();
             } else {
                 static_assert(std::is_reference_v<T>);
             }
         }
+
+    private:
+        T value; // Type T can be a reference to data i.e. V& or a shared_ptr<Sync<V>>
+
+        // Noncopyable
+        Auto(const Auto&) = delete;
+        Auto& operator=(const Auto&) = delete;
+        // Nonmovable
+        Auto(Auto&&) = delete;
+        Auto& operator=(Auto&&) = delete;
     };
-
-
-    /**
-     * Base template class - interface for accessing the value of a variable using @ref VarAuto
-     */
-    //    template <typename V, typename T>
-    //    class VarInterface {
-    //    public:
-    //
-    //        //        V * get();
-    //        //        V * get_const() const;
-    //        //        template < typename = std::enable_if<std::is_trivially_copyable_v < V >> >
-    //        VarAuto<V, T> take(const SyncTimeoutType &timeout = VarSync<V>::SyncTimeoutDeedlock);
-    //
-    //        //        template < typename = std::enable_if<std::is_trivially_copyable_v < V >> >
-    //        const VarAuto<V, T> take_const(const SyncTimeoutType &timeout = VarSync<V>::SyncTimeoutDeedlock) const;
-    //
-    //        //        template < typename = std::enable_if<!std::is_trivially_copyable_v < V >> >
-    //        //        VarAuto<V*, T> take(const VarSync<V*>::TimeoutType &timeout = VarSync<V*>::SyncTimeoutDeedlock);
-    //        //
-    //        //        template < typename = std::enable_if<!std::is_trivially_copyable_v < V >> >
-    //        //        const VarAuto<V*, T> take_const(const VarSync<V*>::TimeoutType &timeout = VarSync<V*>::SyncTimeoutDeedlock) const;
-    //    };
-
-    /**
-     * Variable by value without references.   
-     * A simple wrapper over data to unify access to it using VarAuto
-     */
-    //    template <typename V>
-    //    class VarValue : public VarInterface<V, V&> {
-    //    protected:
-    //        V value;
-    //    public:
-    //
-    //        VarValue(V val) : value(val) {
-    //        }
-    //
-    //        inline V& operator*() {
-    //            return value;
-    //        };
-    //
-    //        inline const V& operator*() const {
-    //            return value;
-    //        };
-    //
-    //        //        inline VarAuto<V, V&> take() {
-    //        //            return VarAuto<V, V&> (value);
-    //        //        }
-    //        //
-    //        //        inline VarAuto<V, V&> take() const {
-    //        //            return take_const();
-    //        //        }
-    //        //
-    //        //        inline const VarAuto<V, V&> take_const() const {
-    //        //            return VarAuto<V, V&> (value);
-    //        //        }
-    //    };
 
     /**
      * Variable by value without references.   
@@ -482,123 +358,11 @@ namespace memsafe { // Begin define memory safety classes
     static_assert(std::is_standard_layout_v<Value<int>>);
 
     /**
-     * Reference variable (shared pointer) without multithreaded access control
-     */
-
-    //    template <typename V>
-    //    class VarShared : public VarInterface<V, VarShared < V >>, public memsafe::shared_ptr<V>
-    //    {
-    //        public:
-    //
-    //        void * m_self;
-    //
-    //
-    //        typedef std::weak_ptr<V> WeakType;
-    //        //        typedef V * PtrType;
-    //        typedef std::function<bool(V *) > LambdaType;
-    //        //        typedef ([V*](void *))() LambdaType;
-    //
-    //        LambdaType m_lambda;
-    //        //        (bool glambda)(void *);// = [](auto * a) -> bool { return a; };
-    //
-    //        VarShared<V> (VarShared<V>::* m_field);
-    //        VarShared<V> (VarShared<V>::* m_method)();
-    //
-    //        //        typedef V::std::weak_ptr<V> FiledType;
-    //
-    //        VarShared(const V & val) : memsafe::shared_ptr<V>(std::make_shared<V>(val)), m_self(nullptr) {
-    //            std::cout << val << " REF\n";
-    //        }
-    //
-    //        // Filed
-    //
-    //        inline bool checkFieldPosInOwner(void * owner, size_t offset) {
-    //            return owner && ((size_t) owner + offset) == (size_t)this;
-    //        }
-    //
-    //        void * m_owner;
-    //        size_t m_offset;
-    //
-    //        template<typename P, typename = std::enable_if < (std::is_pointer<P>::value && (std::is_null_pointer_v<P> || std::is_base_of_v < VarShared<V *>, typename std::remove_pointer<P>::type>)) >>
-    //                explicit VarShared(std::remove_pointer_t<V> & owner, VarShared<P> &filed, V *ptr = nullptr) : memsafe::shared_ptr<V>(ptr), m_owner((void*) &owner) {
-    //
-    //            m_offset = (size_t) & filed - (size_t) & owner;
-    //            assert(checkFieldPosInOwner(m_owner, m_offset));
-    //
-    //            std::cout << &owner << " " << &filed << " " << (size_t) & filed - (size_t) & owner << "  " << ptr << " FIELD\n";
-    //            //            m_lambda = [obj = self](V * ptr) -> bool {
-    //            //                return true;
-    //            //            };
-    //        }
-    //        //
-    //        //        template<typename P, typename = std::enable_if < (std::is_pointer<P>::value && (std::is_null_pointer_v<P> || std::is_base_of_v < VarShared<V *>, typename std::remove_pointer<P>::type>)) >>
-    //        //                explicit VarShared(V * val, P self, void *ptr = nullptr) : memsafe::shared_ptr<V>(val), m_self(self) {
-    //        //
-    //        //            std::cout << this << " " << self << " " << (size_t) self - (size_t)this << "  " << ptr << " FIELD\n";
-    //        //            //            m_lambda = [obj = self](V * ptr) -> bool {
-    //        //            //                return true;
-    //        //            //            };
-    //        //        }
-    //
-    //        template<typename P, typename = std::enable_if < (std::is_pointer<P>::value && std::is_base_of_v < VarShared<V *>, typename std::remove_pointer<P>::type> && !std::is_null_pointer_v<P>) >>
-    //                explicit VarShared(P val) : memsafe::shared_ptr<V>(std::make_shared<V>(val)), m_self(nullptr) {
-    //            std::cout << val << " POINTER\n";
-    //            if constexpr (std::is_pointer<V>::value) {
-    //            }
-    //        }
-    //
-    //        //        bool checkCircularReference(V * ptr) {
-    //        //            return ptr && (&m_self == ptr || VarShared<V*>::checkCircularReference(m_self));
-    //        //        }
-    //
-    //        VarShared(VarShared<V> &val) : VarShared(*val) {
-    //            std::cout << val << " COPY1\n";
-    //            if constexpr (std::is_pointer<V>::value) {
-    //                //                V * temp = (V *) val->m_self;
-    //            }
-    //        }
-    //
-    //        VarShared<std::remove_pointer_t<V> *> & operator=(std::remove_pointer_t<V> * cls) {
-    //            this->template shared_ptr<V>::swap(cls);
-    //            std::cout << cls << " COPY2\n";
-    //            if constexpr (std::is_pointer<V>::value) {
-    //            }
-    //            return *this;
-    //        }
-    //
-    //        inline VarAuto<V, VarShared < V >> take(const SyncTimeoutType &timeout = VarSync<V>::SyncTimeoutDeedlock) {
-    //            return VarAuto<V, VarShared < V >> (*this, timeout);
-    //        }
-    //
-    //        inline const VarAuto<V, VarShared < V >> take_const(const SyncTimeoutType &timeout = VarSync<V>::SyncTimeoutDeedlock) const {
-    //            return VarAuto<V, VarShared < V >> (*this, timeout);
-    //        }
-    //
-    //        inline V& operator*() {
-    //            if (V * temp = this->template shared_ptr<V>::get()) {
-    //                return *temp;
-    //            }
-    //            throw memsafe_error("null pointer exception");
-    //        }
-    //
-    //        inline const V& operator*() const {
-    //            if (const V * temp = this->template shared_ptr<V>::get()) {
-    //                return *temp;
-    //            }
-    //            throw memsafe_error("null pointer exception");
-    //        }
-    //
-    //        VarWeak<V, VarShared < V >> weak();
-    //
-    //    };
-    //
-
-    /**
-     * Reference variable (shared pointer) without multithreaded access control
-     */
-
-    /**
-     * Reference variable (shared pointer) without multithreaded access control
+     * Reference variable (shared pointer) with optional multi-threaded access control.
+     * 
+     * By default using template @ref Sync without multithreaded access control.
+     * @see @ref SyncSingleThread, @ref SyncTimedMutex, @ref SyncTimedShared  )
+     * 
      */
 
     template <typename V, template <typename> typename S = Sync>
@@ -658,6 +422,10 @@ namespace memsafe { // Begin define memory safety classes
         }
     };
 
+    /**
+     * A wrapper template class for storing weak pointers to shared variables
+     */
+
     template <typename T>
     class Weak : public T::WeakType {
     public:
@@ -702,28 +470,130 @@ namespace memsafe { // Begin define memory safety classes
         }
     };
 
+    /**
+     * A class without a synchronization primitive and with the ability to work only in one application thread.   
+     * Used to control access to data from only one application thread without creating a synchronization object between threads.
+     */
+    template <typename V>
+    class SyncSingleThread : public Sync<V> {
+    public:
 
+        SyncSingleThread(V v) : Sync<V>(v), m_thread_id(std::this_thread::get_id()) {
+        }
 
+    protected:
 
+        const std::thread::id m_thread_id;
 
+        inline void check_thread() {
+            if (m_thread_id != std::this_thread::get_id()) {
+                throw memsafe_error("Using a single thread variable in another thread!");
+            }
+        }
 
-    //    static_assert(std::is_standard_layout_v<std::shared_ptr<int>>);
-    //    static_assert(std::is_standard_layout_v<Shared<int>>);
+        inline bool try_lock(const SyncTimeoutType &timeout) override final {
+            check_thread();
+            Sync<V>::timeout_set_error(timeout);
+            return true;
+        }
+
+        inline void unlock() override final {
+            check_thread();
+        }
+
+        inline bool try_lock_const(const SyncTimeoutType &timeout) override final {
+            check_thread();
+            Sync<V>::timeout_set_error(timeout);
+            return true;
+        }
+
+        inline void unlock_const() override final {
+            check_thread();
+        }
+    };
+
+    /**
+     * Class with timed mutex for simple multithreaded synchronization
+     */
+
+    template <typename V>
+    class SyncTimedMutex : public Sync<V>, protected std::timed_mutex {
+    public:
+
+        SyncTimedMutex(V v) : Sync<V>(v) {
+        }
+
+    protected:
+
+        inline bool try_lock(const SyncTimeoutType &timeout) override final {
+
+            return std::timed_mutex::try_lock_for(timeout);
+        }
+
+        inline void unlock() override final {
+
+            std::timed_mutex::unlock();
+        }
+
+        inline bool try_lock_const(const SyncTimeoutType &timeout) override final {
+
+            return std::timed_mutex::try_lock_for(timeout);
+        }
+
+        inline void unlock_const() override final {
+
+            std::timed_mutex::unlock();
+        }
+    };
+
+    /**
+     * Class with shared_timed_mutex for multi-thread synchronization for exclusive read/write lock or shared read-only lock
+     */
+
+    template <typename V>
+    class SyncTimedShared : public Sync<V>, protected std::shared_timed_mutex {
+    public:
+
+        SyncTimedShared<V>(V v) : Sync<V>(v) {
+        }
+
+    protected:
+
+        inline bool try_lock(const SyncTimeoutType &timeout) override final {
+            return std::shared_timed_mutex::try_lock_for(timeout);
+        }
+
+        inline void unlock() override final {
+            std::shared_timed_mutex::unlock();
+        }
+
+        inline bool try_lock_const(const SyncTimeoutType &timeout) override final {
+            return std::shared_timed_mutex::try_lock_shared_for(timeout);
+        }
+
+        inline void unlock_const() override final {
+            std::shared_timed_mutex::unlock_shared();
+        }
+    };
 
     /**
      * Class field reference variable (shared pointer) without multi-threaded access control
      * to store an object of the same class with protection against recursive references at runtime.
+     * 
+     * Should not be used at all, since the check is performed at runtime and 
+     * its execution time depends on the total number of links being checked.
      * 
      * When created, requires the address of the object and the address of the field 
      * in the object to calculate its position in the class field, which must be correct.
      * 
      * To check std::is_standard_layout v the class cannot have virtual methods, 
      * including a destructor, be derived from another class and much more...
+     * 
      */
 
     template <typename V>
-    class Class {
-    public:
+    class [[deprecated]] Class {
+        public:
 
         std::shared_ptr<V> m_field; ///< Field data with a pointer to an instance of the class containing this field (to another instance of the same class)
         V * m_instance; ///< A pointer to the object instance that contains this field.
@@ -770,7 +640,7 @@ namespace memsafe { // Begin define memory safety classes
             return *this;
         }
 
-        Class<V> & operator=(V *cls) {
+        Class<V> & operator=(V * cls) {
             if (!checkCircularReference(m_instance, cls)) {
                 throw memsafe_error("Circular reference exception");
             }
@@ -800,565 +670,19 @@ namespace memsafe { // Begin define memory safety classes
         }
     };
 
+#pragma clang attribute push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+
     static_assert(std::is_standard_layout_v<std::shared_ptr<int>>);
     static_assert(std::is_standard_layout_v<Class<int>>);
 
-
-    //    /**
-    //     * Reference variable (strong pointer) with control over multi-threaded access to data.   
-    //     * By default, it operates on a single application thread without creating a cross-thread access synchronization object
-    //     * using the @ref VarSyncNone template class with control std::thread::id control 
-    //     * to ensure that data is accessed only on a single application thread.
-    //     */
-    //
-    //    template <typename V, template <typename> typename S>
-    //    class VarGuard : public VarInterface<V, VarGuard < V, S >>, public memsafe::shared_ptr<S<V>>, public std::enable_shared_from_this<VarGuard<V, S>>
-    //    {
-    //        public:
-    //
-    //        /* https://en.cppreference.com/w/cpp/memory/shared_ptr 
-    //         * All member functions (including copy constructor and copy assignment) can be called by multiple threads 
-    //         * on different instances of shared_ptr  without additional synchronization even 
-    //         * if these instances are copies and share ownership of the same object. 
-    //         * 
-    //         * If multiple threads of execution access the same shared_ptr without synchronization 
-    //         * and any of those accesses uses a non-const member function of shared_ptr then a data race will occur; 
-    //         * the shared_ptr overloads of atomic functions can be used to prevent the data race. 
-    //         * 
-    //         * @todo replace std::shared_ptr<V> to std::atomic<std::shared_ptr<V>>
-    //         */
-    //
-    //        typedef std::weak_ptr<S < V>> WeakType;
-    //
-    //        public:
-    //
-    //        VarGuard(V val) : memsafe::shared_ptr<S < V >> (std::make_shared<S < V >> (val)) {
-    //        }
-    //
-    //        /**
-    //         * Read inline value as triviall copyable only
-    //         */
-    //        template < typename = std::enable_if<std::is_trivially_copyable_v < V >> >
-    //                inline V operator*() const {
-    //            //            auto lock = take();
-    //            //            return this->memsafe::shared_ptr<S < V >>::operator*().data;
-    //            auto guard_lock = take_const();
-    //            //            this->get()->lock();
-    //            V result = this->memsafe::shared_ptr<S < V>>::operator*().data;
-    //            //            this->get()->unlock();
-    //            return result;
-    //        }
-    //
-    //        inline void set(const V && value) {
-    //            //            auto lock = take();
-    //            //            this->memsafe::shared_ptr<S < V >>::operator*().data = value;
-    //
-    //            auto guard_lock = take();
-    //            //            this->get()->lock();
-    //            this->memsafe::shared_ptr<S < V>>::operator*().data = value;
-    //            //            this->get()->unlock();//////
-    //        }
-    //
-    //        VarAuto<V, VarGuard < V, S >, S> take(const SyncTimeoutType &timeout = VarSync<V>::SyncTimeoutDeedlock) {
-    //            return VarAuto<V, VarGuard <V, S >, S> (*this, timeout);
-    //        }
-    //
-    //        inline VarAuto<V, VarGuard < V, S >, S> take(const SyncTimeoutType &timeout = VarSync<V>::SyncTimeoutDeedlock) const {
-    //            return take_const(timeout);
-    //        }
-    //
-    //        VarAuto<V, VarGuard < V, S >, S> take_const(const SyncTimeoutType &timeout = VarSync<V>::SyncTimeoutDeedlock) const {
-    //            return VarAuto<V, VarGuard <V, S >, S> (*this, timeout);
-    //        }
-    //
-    //        VarWeak<V, VarGuard<V, S >> weak();
-    //
-    //        virtual ~VarGuard() {
-    //        }
-    //    };
-
-
-
-    //    // A class without a synchronization primitive, but with the ability to work only in one application thread
-    //    template <typename V> class VarSyncNone;
-    //
-    //    /**
-    //     * Reference variable (strong pointer) with control over multi-threaded access to data.   
-    //     * By default, it operates on a single application thread without creating a cross-thread access synchronization object
-    //     * using the @ref VarSyncNone template class with control std::thread::id control 
-    //     * to ensure that data is accessed only on a single application thread.
-    //     */
-    //    template <typename V, template <typename> typename S = VarSyncNone>
-    //    class Guard //: std::shared_ptr<S<V>>, public std::enable_shared_from_this<Guard<V, S>>
-    //    {
-    //    public:
-    //        std::shared_ptr<S<V>> m_ptr;
-    //
-    //        /* https://en.cppreference.com/w/cpp/memory/shared_ptr 
-    //         * All member functions (including copy constructor and copy assignment) can be called by multiple threads 
-    //         * on different instances of shared_ptr  without additional synchronization even 
-    //         * if these instances are copies and share ownership of the same object. 
-    //         * 
-    //         * If multiple threads of execution access the same shared_ptr without synchronization 
-    //         * and any of those accesses uses a non-const member function of shared_ptr then a data race will occur; 
-    //         * the shared_ptr overloads of atomic functions can be used to prevent the data race. 
-    //         * 
-    //         * @todo replace std::shared_ptr<V> to std::atomic<std::shared_ptr<V>>
-    //         */
-    //
-    //        typedef std::weak_ptr<S < V>> WeakType;
-    //
-    //    public:
-    //
-    //        Guard() : m_ptr(std::shared_ptr<S < V >> (nullptr)) {
-    //        }
-    //
-    //        Guard(const V & val) : m_ptr(std::shared_ptr<S < V >> (std::make_shared<S < V >> (val))) {
-    //        }
-    //
-    //        /**
-    //         * Read inline value as triviall copyable only
-    //         */
-    //        inline Auto<V, S < V >> operator*() const {
-    //            return take_const();
-    //        }
-    //
-    //        inline void set(const V && value) {
-    //            auto taked = take();
-    //            *taked = value;
-    //        }
-    //
-    //        Auto<V, S < V >> take(const SyncTimeoutType &timeout = SyncTimeoutDeedlock) {
-    //            if (!m_ptr) {
-    //                throw memsafe_error("There is no object");
-    //            }
-    //            if (!m_ptr->try_lock_const(timeout)) {
-    //                throw memsafe_error("try_lock timeout");
-    //            }
-    //            return Auto<V, S < V >> (m_ptr, &m_ptr->unlock, *m_ptr);
-    //        }
-    //
-    //        Auto<V, S < V >> take_const(const SyncTimeoutType &timeout = SyncTimeoutDeedlock) const {
-    //            if (!m_ptr) {
-    //                throw memsafe_error("There is no object");
-    //            }
-    //            if (!m_ptr->try_lock_const(timeout)) {
-    //                throw memsafe_error("try_lock_const timeout");
-    //            }
-    //            return Auto<V, S < V >> (m_ptr, &m_ptr->unlock_const, *m_ptr);
-    //        }
-    //
-    //
-    //        //        Auto<V, Guard < V, S >> take(const SyncTimeoutType &timeout = SyncTimeoutDeedlock) {
-    //        //            if (!m_ptr.get()) {
-    //        //                throw memsafe_error("null pointer exception");
-    //        //            }
-    //        //            if (!m_ptr.get()->try_lock(timeout)) {
-    //        //                throw memsafe_error("try_lock timeout");
-    //        //            }
-    //        //            return Auto<V, Guard < V, S >> (*m_ptr, this, false);
-    //        //        }
-    //        //
-    //        //        inline Auto<V, S < V >> take(const SyncTimeoutType &timeout = SyncTimeoutDeedlock) const {
-    //        //            if (!m_ptr.get()) {
-    //        //                throw memsafe_error("null pointer exception");
-    //        //            }
-    //        //            if (!m_ptr.get()->try_lock_const(timeout)) {
-    //        //                throw memsafe_error("try_lock timeout");
-    //        //            }
-    //        //            return Auto<V, S < V >> (*m_ptr, this, true);
-    //        //        }
-    //        //
-    //        //        Auto<V, S < V >> take_const(const SyncTimeoutType &timeout = SyncTimeoutDeedlock) const {
-    //        //            if (!m_ptr.get()) {
-    //        //                throw memsafe_error("null pointer exception");
-    //        //            }
-    //        //            if (!m_ptr.get()->try_lock_const(timeout)) {
-    //        //                throw memsafe_error("try_lock timeout");
-    //        //            }
-    //        //            return Auto<V, S < V >> (*m_ptr, this, false);
-    //        //        }
-    //
-    //        Weak<Guard<V, S >> weak() {
-    //            return Weak<S < V >> (*this, this);
-    //        }
-    //    };
-    //
-    //    template <template <typename> typename S = VarSyncNone>
-    //    class File : public Guard<int, S> {
-    //    public:
-    //
-    //        File() : Guard<std::FILE *, S>() {
-    //        }
-    //
-    //        File(std::string_view name, std::string_view mode) : Guard<std::FILE *, S>() {
-    //            Open(name, mode);
-    //        }
-    //
-    //        void Open(std::string_view name, std::string_view mode) {
-    //            *this = std::fopen(name.begin(), mode.begin());
-    //            if (*this == nullptr) {
-    //                throw std::runtime_error(std::format("Error open file '{}' with mode {}", name.begin(), mode.begin()));
-    //            }
-    //        }
-    //
-    //        virtual ~File() {
-    //            if (*this != nullptr) {
-    //                std::fclose(*this);
-    //            }
-    //        }
-    //    };
-    //
-
-
-    //    /**
-    //     * A wrapper class template for storing weak pointers to shared and guard variables
-    //     * 
-    //     */
-    //    //std::conditional<std::is_trivially_copyable_v < V >, V, V*>::type
-    //
-    //    template <typename V, typename T = VarShared<V>> //VarShared<V>
-    //    class VarWeak : public VarInterface<V, T>, public T::WeakType {
-    //    public:
-    //
-    //        VarWeak() {
-    //        }
-    //
-    //        VarWeak(T * ptr) : T::WeakType(ptr) {
-    //        }
-    //
-    //        VarWeak(T & ptr) : T::WeakType(ptr) {
-    //        }
-    //
-    //        VarWeak(const VarWeak & old) : T::WeakType(old) {
-    //        }
-    //
-    //
-    //        auto take(const SyncTimeoutType &timeout = VarSync<V>::SyncTimeoutDeedlock) -> typename std::conditional<std::is_base_of_v<VarShared<V>, T>,
-    //        VarAuto<V, VarShared < V >>,
-    //        VarAuto<V, VarGuard< V >>>::type
-    //        {
-    //            if constexpr (std::is_base_of_v<VarShared<V>, T>) {
-    //                return VarAuto<V, VarShared < V >> (*this->lock(), timeout);
-    //            } else {
-    //                return VarAuto<V, VarGuard < V >> (*this->lock(), timeout);
-    //            }
-    //        }
-    //
-    //        auto take_const(const SyncTimeoutType &timeout = VarSync<V>::SyncTimeoutDeedlock) const -> typename std::conditional<std::is_base_of_v<VarShared<V>, T>,
-    //        VarAuto<V, VarShared < V >>,
-    //        VarAuto<V, VarGuard< V >>>::type
-    //        {
-    //            if constexpr (std::is_base_of_v<VarShared<V>, T>) {
-    //                return VarAuto<V, VarShared < V >> (*this->lock(), timeout);
-    //            } else {
-    //                return VarAuto<V, VarGuard < V >> (*this->lock(), timeout);
-    //            }
-    //        }
-    //
-    //        virtual ~VarWeak() {
-    //        }
-    //    };
-
-
-
-    /**
-     * A wrapper class template for storing weak pointers to shared and guard variables
-     * 
-     */
-    //    //std::conditional<std::is_trivially_copyable_v < V >, V, V*>::type
-    //
-    //
-    //    //    /*
-    //    //     * 
-    //    //     * 
-    //    //     */
-    //
-    //    template <typename V, typename T, template <typename> typename S>
-    //    inline V & VarAuto<V, T, S>::operator*() { /// Это значение (адрес)
-    //        if constexpr (std::is_base_of_v<VarShared<V>, T>) {
-    //            return *taken;
-    //        } else if constexpr (std::is_base_of_v< VarGuard<V, S>, T>) {
-    //            return taken.guard->data;
-    //        } else {
-    //            return taken;
-    //        }
-    //    };
-    //
-    //    template <typename V, typename T, template <typename> typename S>
-    //    inline const V & VarAuto<V, T, S>::operator*() const { /// Это значение (адрес)
-    //        if constexpr (std::is_base_of_v<VarGuard<V, S>, T>) {
-    //            return taken.guard->data;
-    //        } else if constexpr (std::is_base_of_v<VarShared<V>, T>) {
-    //            return *taken;
-    //        } else {
-    //            return taken;
-    //        }
-    //    };
-    //
-    //    template <typename V, typename T, template <typename> typename S >
-    //    VarAuto<V, T, S>::VarAuto(T arg, const SyncTimeoutType &timeout) : taken(arg) {
-    //        if constexpr (std::is_base_of_v<VarGuard<V, S>, T>) {
-    //            // Only guard variables need to be locked.
-    //            if (!taken->try_lock(timeout)) {
-    //                throw memsafe_error("try_lock timeout");
-    //            }
-    //        }
-    //    };
-    //
-    //    template <typename V, typename T, template <typename> typename S >
-    //    VarAuto<V, T, S>::~VarAuto() {
-    //        if constexpr (std::is_base_of_v<VarGuard<V, S>, T>) {
-    //            // Only guard variables need to be unlocked.
-    //            taken->unlock();
-    //        }
-    //    };
-    //
-    //    template <typename V, typename T, template <typename> typename S>
-    //    inline V & Auto<V, T, S>::operator*() { /// Это значение (адрес)
-    //        if constexpr (std::is_base_of_v<Shared<V>, T>) {
-    //            return *taken;
-    //        } else if constexpr (std::is_base_of_v<Guard<V, S>, T>) {
-    //            return taken.guard->data;
-    //        } else {
-    //            return taken;
-    //        }
-    //    };
-    //
-    //    template <typename V, typename T, template <typename> typename S>
-    //    inline const V & Auto<V, T, S>::operator*() const { /// Это значение (адрес)
-    //        if constexpr (std::is_base_of_v<Guard<V, S>, T>) {
-    //            return taken.guard->data;
-    //        } else if constexpr (std::is_base_of_v<Shared<V>, T>) {
-    //            return *taken;
-    //        } else {
-    //            return taken;
-    //        }
-    //    };
-
-
-
-    //    /*
-    //     * 
-    //     * 
-    //     */
-    //
-    //    template <typename V, template <typename> typename S >
-    //    inline VarWeak<V, VarGuard<V, S >> VarGuard<V, S>::weak() {
-    //        return VarWeak<V, VarGuard<V, S >> (*this);
-    //    }
-    //
-    //    template <typename V>
-    //    inline VarWeak<V, VarShared < V >> VarShared<V>::weak() {
-    //        return VarWeak<V, VarShared < V >> (*this);
-    //    }
-
-    /**
-     * A class without a synchronization primitive and with the ability to work only in one application thread.   
-     * Used to control access to data from only one application thread without creating a synchronization object between threads.
-     */
-    template <typename V>
-    class SyncSingleThread : public Sync<V> {
-    public:
-
-        SyncSingleThread(V v) : Sync<V>(v), m_thread_id(std::this_thread::get_id()) {
-        }
-
-    protected:
-
-        const std::thread::id m_thread_id;
-
-        inline void check_thread() {
-            if (m_thread_id != std::this_thread::get_id()) {
-                throw memsafe_error("Using a single thread variable in another thread!");
-            }
-        }
-
-        inline bool try_lock(const SyncTimeoutType &timeout) override final {
-            check_thread();
-            Sync<V>::timeout_set_error(timeout);
-            return true;
-        }
-
-        inline void unlock() override final {
-            check_thread();
-        }
-
-        inline bool try_lock_const(const SyncTimeoutType &timeout) override final {
-            check_thread();
-            Sync<V>::timeout_set_error(timeout);
-            return true;
-        }
-
-        inline void unlock_const() override final {
-            check_thread();
-        }
-    };
-
-    /**
-     * Class with mutex for simple multithreaded synchronization
-     */
-
-    template <typename V>
-    class SyncTimedMutex : public Sync<V>, protected std::timed_mutex {
-    public:
-
-        SyncTimedMutex(V v) : Sync<V>(v) {
-        }
-
-    protected:
-
-        inline bool try_lock(const SyncTimeoutType &timeout) override final {
-
-            return std::timed_mutex::try_lock_for(timeout);
-        }
-
-        inline void unlock() override final {
-
-            std::timed_mutex::unlock();
-        }
-
-        inline bool try_lock_const(const SyncTimeoutType &timeout) override final {
-
-            return std::timed_mutex::try_lock_for(timeout);
-        }
-
-        inline void unlock_const() override final {
-
-            std::timed_mutex::unlock();
-        }
-    };
-
-    /**
-     * Recursive shared_mutex for multi-thread synchronization for exclusive read/write lock or shared read-only lock
-     */
-
-
-    template <typename V>
-    class SyncTimedShared : public Sync<V>, protected std::shared_timed_mutex {
-    public:
-
-        SyncTimedShared<V>(V v) : Sync<V>(v) {
-        }
-
-    protected:
-
-        inline bool try_lock(const SyncTimeoutType &timeout) override final {
-            return std::shared_timed_mutex::try_lock_for(timeout);
-        }
-
-        inline void unlock() override final {
-            std::shared_timed_mutex::unlock();
-        }
-
-        inline bool try_lock_const(const SyncTimeoutType &timeout) override final {
-            return std::shared_timed_mutex::try_lock_shared_for(timeout);
-        }
-
-        inline void unlock_const() override final {
-            std::shared_timed_mutex::unlock_shared();
-        }
-    };
-
-    //    /**
-    //     * Wrapper over the standard std::shared_ptr template to throw exceptions when accessing nullptr
-    //     * 
-    //     * https://en.cppreference.com/w/cpp/memory/shared_ptr/operator%2A
-    //     * Dereferences the stored pointer. The behavior is undefined if the stored pointer is null. 
-    //     */
-    //
-    //    template <typename V>
-    //    class shared_ptr : public std::shared_ptr<V> {
-    //    public:
-    //
-    //        //      template<typename _Yp, typename = _Constructible<_Yp*>>
-    //        //	explicit
-    //        //	shared_ptr(_Yp* __p) : __shared_ptr<_Tp>(__p) { }        
-    //
-    //        //        shared_ptr(const shared_ptr&) noexcept = default; ///< Copy constructor
-    //
-    //        template<typename P, typename = std::enable_if<std::is_pointer<P>::value>>
-    //        explicit shared_ptr(P val) : std::shared_ptr<V>(val) {
-    //        }
-    //
-    //        inline V* operator->() {
-    //            if (V * temp = std::shared_ptr<V>::get()) {
-    //                return temp;
-    //            }
-    //            throw memsafe_error("null pointer exception");
-    //        }
-    //
-    //        inline const V* operator->() const {
-    //            if (V * temp = std::shared_ptr<V>::get()) {
-    //                return temp;
-    //            }
-    //            throw memsafe_error("null pointer exception");
-    //        }
-    //
-    //        inline V& operator*() {
-    //            if (V * temp = std::shared_ptr<V>::get()) {
-    //                return *temp;
-    //            }
-    //            throw memsafe_error("null pointer exception");
-    //        }
-    //
-    //        inline const V& operator*() const {
-    //            if (V * temp = std::shared_ptr<V>::get()) {
-    //                return *temp;
-    //            }
-    //            throw memsafe_error("null pointer exception");
-    //        }
-    //    };
-    //
-    //    /**
-    //     * Wrapper over the standard std::unique_ptr template to throw exceptions when accessing nullptr
-    //     * operator* and operator-> provide access to the object owned by *this.
-    //     * 
-    //     * https://en.cppreference.com/w/cpp/memory/unique_ptr/operator%2A
-    //     * The behavior is undefined if get() == nullptr.
-    //     * These member functions are only provided for unique_ptr for the single objects i.e. the primary template. 
-    //     */
-    //
-    //    template <typename V>
-    //    class unique_ptr : public std::unique_ptr<V> {
-    //    public:
-    //
-    //        inline V* operator->() {
-    //            if (V * temp = std::unique_ptr<V>::get()) {
-    //                return temp;
-    //            }
-    //            throw memsafe_error("null pointer exception");
-    //        }
-    //
-    //        inline const V* operator->() const {
-    //            if (V * temp = std::unique_ptr<V>::get()) {
-    //                return temp;
-    //            }
-    //            throw memsafe_error("null pointer exception");
-    //        }
-    //
-    //        inline V& operator*() {
-    //            if (V * temp = std::unique_ptr<V>::get()) {
-    //                return *temp;
-    //            }
-    //            throw memsafe_error("null pointer exception");
-    //        }
-    //
-    //        inline const V& operator*() const {
-    //            if (V * temp = std::unique_ptr<V>::get()) {
-    //                return *temp;
-    //            }
-    //            throw memsafe_error("null pointer exception");
-    //        }
-    //    };
-
-    /*
-     * 
-     * 
-     * 
-     */
+#pragma clang attribute pop
 
 #ifndef DOXYGEN_SHOULD_SKIP_THIS
+
+    /**
+     * Helper class for lazy invocation of iterator
+     */
 
     class LazyCallerInterface {
     public:
@@ -1586,32 +910,31 @@ namespace memsafe { // Begin define memory safety classes
     MEMSAFE_PROFILE(""); // Reset to default profile
 
     MEMSAFE_ERROR_TYPE("std::auto_ptr");
-    MEMSAFE_WARNING_TYPE("std::auto_ptr");
+    MEMSAFE_ERROR_TYPE("std::shared_ptr");
 
-    MEMSAFE_AUTO_TYPE("memsafe::Auto");
+    MEMSAFE_WARNING_TYPE("std::auto_ptr");
+    MEMSAFE_WARNING_TYPE("std::shared_ptr");
+
     MEMSAFE_SHARED_TYPE("memsafe::Shared");
 
-    MEMSAFE_POINTER_TYPE("__gnu_cxx::__normal_iterator");
-    MEMSAFE_POINTER_TYPE("std::reverse_iterator");
+    MEMSAFE_AUTO_TYPE("memsafe::Auto");
+    MEMSAFE_AUTO_TYPE("__gnu_cxx::__normal_iterator");
+    MEMSAFE_AUTO_TYPE("std::reverse_iterator");
 
     /*
      * For a basic_string_view str, pointers, iterators, and references to elements of str are invalidated 
      * when an operation invalidates a pointer in the range [str.data(), str.data() + str.size()).
      */
-    MEMSAFE_POINTER_TYPE("std::basic_string_view");
+    MEMSAFE_AUTO_TYPE("std::basic_string_view");
     /*
      * For a span s, pointers, iterators, and references to elements of s are invalidated 
      * when an operation invalidates a pointer in the range [s.data(), s.data() + s.size()). 
      */
-    MEMSAFE_POINTER_TYPE("std::span");
+    MEMSAFE_AUTO_TYPE("std::span");
 
-
-    MEMSAFE_NONCONST_ARG("ignored");
-    MEMSAFE_NONCONST_METHOD("ignored");
 
     MEMSAFE_INVALIDATE_FUNC("std::swap");
     MEMSAFE_INVALIDATE_FUNC("std::move");
-
 
     // End define memory safety classes
 #if !defined(MEMSAFE_DISABLE)    
