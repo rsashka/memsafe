@@ -528,6 +528,23 @@ TEST(MemSafe, ApplyAttr) {
 
 }
 
+TEST(MemSafe, Separartor) {
+    ASSERT_STREQ("", SeparatorRemove("").c_str());
+    ASSERT_STREQ("0", SeparatorRemove("0").c_str());
+    ASSERT_STREQ("00", SeparatorRemove("0'0").c_str());
+    ASSERT_STREQ("0000", SeparatorRemove("0000").c_str());
+    ASSERT_STREQ("000000", SeparatorRemove("0_00_000").c_str());
+    ASSERT_STREQ("00000000", SeparatorRemove("0'0'0'0'0'0'0'0").c_str());
+
+    EXPECT_STREQ("0", SeparatorInsert(0).c_str());
+    EXPECT_STREQ("1", SeparatorInsert(1).c_str());
+    EXPECT_STREQ("111", SeparatorInsert(111).c_str());
+    EXPECT_STREQ("1'111", SeparatorInsert(1'111).c_str());
+    EXPECT_STREQ("11'111", SeparatorInsert(11'111).c_str());
+    EXPECT_STREQ("111'111", SeparatorInsert(111'111).c_str());
+    EXPECT_STREQ("111_111_111_111", SeparatorInsert(111'111'111'111, '_').c_str());
+}
+
 TEST(MemSafe, Plugin) {
 
     namespace fs = std::filesystem;
@@ -642,7 +659,10 @@ TEST(MemSafe, Plugin) {
         "#log #4603",
         "#warn #4603",
         "#err #4701",
+        "#log #4702",
         "#log #4703",
+        "#log #4704",
+        "#log #4704",
         "#log #4801",
         "#err #7003",
         "#log #7004",
@@ -663,6 +683,15 @@ TEST(MemSafe, Plugin) {
         "#warn #10014",
         "#warn #10015",
         "#warn #10016",
+
+        //bugfix_11()
+        "#log #900011002",
+        "#log #900011002",
+        "#log #900011003",
+        "#log #900011003",
+        "#warn #900011003",
+        "#err #900011004",
+        "#log #900011004",
     });
 
     size_t line;

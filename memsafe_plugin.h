@@ -129,18 +129,18 @@ namespace memsafe {
                     });
         }
 
-//        bool MatchesNameColor(std::string& name, const char *start = "",, const char *stop = "") const {
-//            if (exact_match_patterns_.count(name)) {
-//            } else {
-//            }
-//            return  ||
-//                    std::any_of(glob_patterns_.begin(), glob_patterns_.end(),
-//                    [&name](const std::string & pattern) {
-//                        return PatternMatchesString(
-//                                name, pattern.c_str(),
-//                                pattern.c_str() + pattern.size());
-//                    });
-//        }
+        //        bool MatchesNameColor(std::string& name, const char *start = "",, const char *stop = "") const {
+        //            if (exact_match_patterns_.count(name)) {
+        //            } else {
+        //            }
+        //            return  ||
+        //                    std::any_of(glob_patterns_.begin(), glob_patterns_.end(),
+        //                    [&name](const std::string & pattern) {
+        //                        return PatternMatchesString(
+        //                                name, pattern.c_str(),
+        //                                pattern.c_str() + pattern.size());
+        //                    });
+        //        }
 
         bool isEmpty() {
             return glob_patterns_.empty() && exact_match_patterns_.empty();
@@ -155,6 +155,24 @@ namespace memsafe {
         std::vector<std::string> glob_patterns_;
         std::unordered_set<std::string> exact_match_patterns_;
     };
+
+    std::string SeparatorRemove(const std::string_view number) {
+        std::string result(number);
+        auto removed = std::remove(result.begin(), result.end(), '\'');
+        removed = std::remove(result.begin(), removed, '_');
+        result.erase(removed, result.end());
+        return result;
+    }
+
+    std::string SeparatorInsert(size_t number, const char sep = '\'') {
+        std::string result = std::to_string(number);
+        size_t pos = 3;
+        while (pos < result.size()) {
+            result = result.insert(result.size() - pos, 1, sep);
+            pos += 4;
+        }
+        return result;
+    }
 
     /*
      * 

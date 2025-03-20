@@ -192,5 +192,12 @@ namespace ns {
         MEMSAFE_UNSAFE Shared<RecursiveRef> unsafe_recursive; // Unsafe
     };
 
+    void bugfix_11() { // https://github.com/rsashka/memsafe/issues/11
+        MEMSAFE_BASELINE(900_011_000);
+        std::vector vect(100000, 0);
+        auto x = (vect.begin());
+        vect = {};
+        std::sort(x, vect.end()); // Error
+    }
 }
 

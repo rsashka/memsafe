@@ -32,15 +32,10 @@
 
 using namespace clang;
 using namespace clang::ast_matchers;
+using namespace memsafe;
 
 
 namespace {
-
-
-    //    - Поля классов
-    //    - объединить авто и инвалидате
-    //    - ссылки????
-
 
 
     /**
@@ -947,7 +942,7 @@ namespace {
                             loc = m_CI.getSourceManager().getExpansionLoc(loc);
                         }
                         line_base = getDiag().getSourceManager().getSpellingLineNumber(loc);
-                        line_number = std::stoi(attr_args.second);
+                        line_number = std::stoi(SeparatorRemove(attr_args.second));
 
                         //                        if (logger) {
                         //                            clang::DiagnosticBuilder DB = getDiag().Report(loc, getDiag().getCustomDiagID(
@@ -1155,6 +1150,10 @@ namespace {
 
             if (isa<DeclRefExpr>(result) || isa<CXXMemberCallExpr>(result) || isa<CXXConstructExpr>(result) || isa<UnaryOperator>(result)) {
                 return result;
+            }
+
+            if (const ParenExpr * paren = dyn_cast<ParenExpr>(result)) {
+                return paren->getSubExpr();
             }
 
             LogError(var.getLocation(), "Unknown VarDecl initializer");
@@ -1393,6 +1392,39 @@ namespace {
                         LogWarning(ret->getBeginLoc(), "UNSAFE return shared variable");
                     } else {
                         LogError(ret->getBeginLoc(), "Return shared variable");
+                    }
+                }
+            }
+            return true;
+        }
+
+        bool VisitBinaryOperator(const BinaryOperator * op) {
+
+            if (op->isAssignmentOp()) {
+
+
+                std::string lval;
+                const char * lval_type;
+                int lval_level;
+                bool is_lval = checkArg(op->getLHS(), lval, lval_type, lval_level);
+
+
+                std::string rval;
+                const char * rval_type;
+                int rval_level;
+                bool is_rval = checkArg(op->getRHS(), rval, rval_type, rval_level);
+
+                if (is_lval && is_rval) {
+                    if (std::string_view(SHARED_TYPE).compare(lval_type) == 0 && std::string_view(SHARED_TYPE).compare(rval_type) == 0) {
+                        if (lval_level > rval_level) {
+                            LogOnly(op->getBeginLoc(), "Copy of shared variable with shorter lifetime");
+                        } else {
+                            if (m_scopes.testUnsafe().isValid()) {
+                                LogWarning(op->getBeginLoc(), "UNSAFE copy a shared variable");
+                            } else {
+                                LogError(op->getBeginLoc(), "Error copying shared variable due to lifetime extension");
+                            }
+                        }
                     }
                 }
             }
