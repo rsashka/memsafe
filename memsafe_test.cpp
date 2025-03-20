@@ -528,6 +528,23 @@ TEST(MemSafe, ApplyAttr) {
 
 }
 
+TEST(MemSafe, Separartor) {
+    ASSERT_STREQ("", SeparatorRemove("").c_str());
+    ASSERT_STREQ("0", SeparatorRemove("0").c_str());
+    ASSERT_STREQ("00", SeparatorRemove("0'0").c_str());
+    ASSERT_STREQ("0000", SeparatorRemove("0000").c_str());
+    ASSERT_STREQ("000000", SeparatorRemove("0_00_000").c_str());
+    ASSERT_STREQ("00000000", SeparatorRemove("0'0'0'0'0'0'0'0").c_str());
+
+    EXPECT_STREQ("0", SeparatorInsert(0).c_str());
+    EXPECT_STREQ("1", SeparatorInsert(1).c_str());
+    EXPECT_STREQ("111", SeparatorInsert(111).c_str());
+    EXPECT_STREQ("1'111", SeparatorInsert(1'111).c_str());
+    EXPECT_STREQ("11'111", SeparatorInsert(11'111).c_str());
+    EXPECT_STREQ("111'111", SeparatorInsert(111'111).c_str());
+    EXPECT_STREQ("111_111_111_111", SeparatorInsert(111'111'111'111, '_').c_str());
+}
+
 TEST(MemSafe, Plugin) {
 
     namespace fs = std::filesystem;
@@ -577,7 +594,7 @@ TEST(MemSafe, Plugin) {
             << log_output;
 
 
-    std::multiset<std::string> diag({
+    std::vector<std::string> diag({
         "#log #201",
         "#log #201",
         "#log #202",
@@ -588,14 +605,15 @@ TEST(MemSafe, Plugin) {
         "#log #207",
         "#log #207",
         "#log #208",
+        "#err #209",
+        "#log #209",
         "#warn #208",
         "#err #209",
-        "#err #209",
-        "#warn #301",
         "#log #301",
         "#log #301",
-        "#warn #302",
         "#log #302",
+        "#warn #301",
+        "#warn #302",
         "#err #303",
         "#log #303",
         "#log #401",
@@ -642,7 +660,10 @@ TEST(MemSafe, Plugin) {
         "#log #4603",
         "#warn #4603",
         "#err #4701",
+        "#log #4702",
         "#log #4703",
+        "#log #4704",
+        "#log #4704",
         "#log #4801",
         "#err #7003",
         "#log #7004",
@@ -663,15 +684,24 @@ TEST(MemSafe, Plugin) {
         "#warn #10014",
         "#warn #10015",
         "#warn #10016",
-    });
 
-    size_t line;
-    std::multimap<size_t, const char *> list;
-    for (auto &elem : diag) {
-        line = atoi(&elem.substr(elem.find(" #") + 2)[0]);
-        ASSERT_TRUE(line) << elem;
-        list.emplace(line, elem.data());
-    }
+        //bugfix_11()
+        "#log #900011002",
+        "#log #900011002",
+        "#log #900011003",
+        "#log #900011003",
+        "#warn #900011003",
+        "#err #900011004",
+        "#log #900011004",
+
+        //bugfix_12()
+        "#log #900012002",
+        "#log #900012003",
+        "#log #900012003",
+        "#log #900012004",
+        "#warn #900012003",
+        "#err #900012004",
+    });
 
     size_t pos = log_output.find(MEMSAFE_KEYWORD_START_LOG);
     ASSERT_TRUE(pos != std::string::npos);
@@ -684,35 +714,45 @@ TEST(MemSafe, Plugin) {
 
     ASSERT_TRUE(log.size()) << log_str;
 
-    pos = 0;
-    while (pos < log.size()) {
+    while (!log.empty() && !diag.empty()) {
 
-        size_t type_pos = log[pos].find("#");
-        ASSERT_TRUE(type_pos != std::string::npos) << pos << " " << log[pos];
-
-        size_t hash_pos = log[pos].find(" #", type_pos + 1);
-        ASSERT_TRUE(hash_pos != std::string::npos) << pos << " " << log[pos];
-
-        line = atoi(log[pos].data() + hash_pos + 2);
-        ASSERT_TRUE(line) << pos << " " << log[pos];
-
-        size_t msg_pos = log[pos].find(" ", hash_pos + 1);
-        ASSERT_TRUE(msg_pos != std::string::npos) << pos << " " << log[pos];
-
-        auto found = list.find(line);
-        if (found == list.end()) {
-            ADD_FAILURE() << "Not found: " << log[pos] << " " << line << " pos: " << pos;
-        } else if (log[pos].find(found->second) != type_pos) {
-            ADD_FAILURE() << "At mark line: #" << line << " expected: \"" << found->second << "\" but found \"" << log[pos] << "\"";
-            list.erase(found);
+        if (log.front().find(diag.front()) != std::string::npos) {
+            log.erase(log.begin());
+            diag.erase(diag.begin());
         } else {
-            list.erase(found);
+
+            ASSERT_TRUE(diag.front().find(" #") != std::string::npos) << diag.front();
+
+            size_t diag_line = atoi(diag.front().data() + diag.front().find(" #") + 2);
+            ASSERT_TRUE(diag_line) << diag.front();
+
+            size_t skip = log.front().find(" #");
+            ASSERT_TRUE(skip != std::string::npos) << log.front();
+
+            ASSERT_TRUE(log.front().find(" #", skip + 2) != std::string::npos) << log.front();
+
+            size_t log_line = atoi(log.front().data() + log.front().find(" #", skip + 2) + 2);
+            ASSERT_TRUE(log_line) << log.front();
+
+            if (log_line > diag_line) {
+                ADD_FAILURE() << "In log not found: " << log.front();
+                log.erase(log.begin());
+            } else if (log_line < diag_line) {
+                ADD_FAILURE() << "In diag not found: " << diag.front();
+                diag.erase(diag.begin());
+            } else {
+                ADD_FAILURE() << "Diag expected: \"" << diag.front() << "\" but found \"" << log.front() << "\"";
+                log.erase(log.begin());
+                diag.erase(diag.begin());
+            }
         }
-        pos++;
     }
 
-    for (auto &elem : list) {
-        ADD_FAILURE() << "Not found: " << elem.second;
+    for (auto &elem : log) {
+        ADD_FAILURE() << "Log not found: " << elem;
+    }
+    for (auto &elem : diag) {
+        ADD_FAILURE() << "Diag not found: " << elem;
     }
 
 }

@@ -32,15 +32,10 @@
 
 using namespace clang;
 using namespace clang::ast_matchers;
+using namespace memsafe;
 
 
 namespace {
-
-
-    //    - Поля классов
-    //    - объединить авто и инвалидате
-    //    - ссылки????
-
 
 
     /**
@@ -109,6 +104,11 @@ namespace {
         }
 
         void Dump(raw_ostream & out) {
+            for (auto &elem : m_logs) {
+                out << "    \"" << elem.second.substr(0, elem.second.find(" ", 7)) << "\",\n";
+            }
+            out << "\n";
+
             out << MEMSAFE_KEYWORD_START_LOG;
             for (auto &elem : m_logs) {
                 out << LocToStr(elem.first);
@@ -947,7 +947,7 @@ namespace {
                             loc = m_CI.getSourceManager().getExpansionLoc(loc);
                         }
                         line_base = getDiag().getSourceManager().getSpellingLineNumber(loc);
-                        line_number = std::stoi(attr_args.second);
+                        line_number = std::stoi(SeparatorRemove(attr_args.second));
 
                         //                        if (logger) {
                         //                            clang::DiagnosticBuilder DB = getDiag().Report(loc, getDiag().getCustomDiagID(
@@ -1133,7 +1133,10 @@ namespace {
 
         const DeclRefExpr * getInitializer(const VarDecl &decl) {
             if (const CXXMemberCallExpr * calle = dyn_cast_or_null<CXXMemberCallExpr>(getExprInitializer(decl))) {
-                return dyn_cast<DeclRefExpr>(calle->getImplicitObjectArgument()->IgnoreUnlessSpelledInSource()->IgnoreImplicit());
+                return dyn_cast<DeclRefExpr>(removeTempExpr(calle->getImplicitObjectArgument()));
+            }
+            if (const CXXOperatorCallExpr * op = dyn_cast_or_null<CXXOperatorCallExpr>(getExprInitializer(decl))) {
+                return dyn_cast<DeclRefExpr>(removeTempExpr(op->getArg(0)));
             }
             return nullptr;
         }
@@ -1153,8 +1156,12 @@ namespace {
                 return nullptr;
             }
 
-            if (isa<DeclRefExpr>(result) || isa<CXXMemberCallExpr>(result) || isa<CXXConstructExpr>(result) || isa<UnaryOperator>(result)) {
+            if (isa<DeclRefExpr>(result) || isa<CXXMemberCallExpr>(result) || isa<CXXOperatorCallExpr>(result) || isa<CXXConstructExpr>(result) || isa<UnaryOperator>(result)) {
                 return result;
+            }
+
+            if (const ParenExpr * paren = dyn_cast<ParenExpr>(result)) {
+                return paren->getSubExpr();
             }
 
             LogError(var.getLocation(), "Unknown VarDecl initializer");
@@ -1297,7 +1304,7 @@ namespace {
             return true;
         }
 
-        bool VisitCallExpr(const CallExpr *call) {
+        bool VisitCallExpr(const CallExpr * call) {
             if (isEnabled() && call->getNumArgs() == 2) {
 
                 if (call->getDirectCallee()-> getQualifiedNameAsString().compare("std::swap") != 0) {
@@ -1330,7 +1337,7 @@ namespace {
             return true;
         }
 
-        bool VisitCXXOperatorCallExpr(const CXXOperatorCallExpr *op) {
+        bool VisitCXXOperatorCallExpr(const CXXOperatorCallExpr * op) {
             if (isEnabled() && op->isAssignmentOp()) {
 
                 assert(op->getNumArgs() == 2);
@@ -1360,7 +1367,7 @@ namespace {
             return true;
         }
 
-        bool VisitReturnStmt(const ReturnStmt *ret) {
+        bool VisitReturnStmt(const ReturnStmt * ret) {
 
             if (isEnabled() && ret) {
 
@@ -1393,6 +1400,39 @@ namespace {
                         LogWarning(ret->getBeginLoc(), "UNSAFE return shared variable");
                     } else {
                         LogError(ret->getBeginLoc(), "Return shared variable");
+                    }
+                }
+            }
+            return true;
+        }
+
+        bool VisitBinaryOperator(const BinaryOperator * op) {
+
+            if (op->isAssignmentOp()) {
+
+
+                std::string lval;
+                const char * lval_type;
+                int lval_level;
+                bool is_lval = checkArg(op->getLHS(), lval, lval_type, lval_level);
+
+
+                std::string rval;
+                const char * rval_type;
+                int rval_level;
+                bool is_rval = checkArg(op->getRHS(), rval, rval_type, rval_level);
+
+                if (is_lval && is_rval) {
+                    if (std::string_view(SHARED_TYPE).compare(lval_type) == 0 && std::string_view(SHARED_TYPE).compare(rval_type) == 0) {
+                        if (lval_level > rval_level) {
+                            LogOnly(op->getBeginLoc(), "Copy of shared variable with shorter lifetime");
+                        } else {
+                            if (m_scopes.testUnsafe().isValid()) {
+                                LogWarning(op->getBeginLoc(), "UNSAFE copy a shared variable");
+                            } else {
+                                LogError(op->getBeginLoc(), "Error copying shared variable due to lifetime extension");
+                            }
+                        }
                     }
                 }
             }
@@ -1572,11 +1612,26 @@ namespace {
                 if (class_decl) {
                     checkTypeName(var->getLocation(), class_decl->getQualifiedNameAsString(), is_unsafe);
                 }
-                // The type (class) of the variable that the plugin should analyze
-                const char * found_type = checkClassNameTracking(class_decl);
+
+                // The type (class) of a reference type variable depends on the data 
+                // and may become invalid if the original data changes.
+
+                const DeclRefExpr * dre = nullptr;
+
+                if (Expr * init = var->getInit()) {
+                    dre = dyn_cast<DeclRefExpr>(removeTempExpr(init));
+                }
+
+                if (!dre) {
+                    dre = getInitializer(*var);
+                }
+
 
                 // The name of the variable
                 std::string var_name = var->getNameAsString();
+
+                // The type (class) of the variable that the plugin should analyze
+                const char * found_type = checkClassNameTracking(class_decl);
 
                 if (!found_type) {
 
@@ -1585,9 +1640,20 @@ namespace {
 
                     if (var->getType()->isPointerType()) {
                         if (is_unsafe) {
-                            LogWarning(var->getLocation(), "UNSAFE Raw pointer type");
+                            LogWarning(var->getLocation(), "UNSAFE Raw address");
                         } else {
-                            LogError(var->getLocation(), "Raw pointer type");
+                            LogError(var->getLocation(), "Raw address");
+                        }
+                    }
+
+                    if (var->getType()->isPointerType() || var->getType()-> isReferenceType()) {
+                        if (dre) {
+                            std::string depend_name = dre->getDecl()->getNameAsString();
+
+                            m_scopes.back().dependent.emplace(var_name, depend_name);
+                            m_scopes.back().blocker.emplace(depend_name, std::vector<SourceLocation>({dre->getLocation()}));
+
+                            LogOnly(var->getLocation(), std::format("{}:raw-addr=>{}", var_name, depend_name));
                         }
                     }
 
@@ -1611,19 +1677,6 @@ namespace {
                         }
                     } else {
                         LogOnly(var->getLocation(), std::format("Var found {}:{}", var_name, found_type));
-                    }
-
-                    // The type (class) of a reference type variable depends on the data 
-                    // and may become invalid if the original data changes.
-
-                    const DeclRefExpr * dre = nullptr;
-
-                    if (Expr * init = var->getInit()) {
-                        dre = dyn_cast<DeclRefExpr>(init->IgnoreUnlessSpelledInSource()->IgnoreImplicit());
-                    }
-
-                    if (!dre) {
-                        dre = getInitializer(*var);
                     }
 
                     if (dre) {

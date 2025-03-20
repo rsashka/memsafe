@@ -5,7 +5,7 @@
 using namespace memsafe;
 
 namespace ns {
-
+    
     MEMSAFE_BASELINE(100);
 
     void * invalidate_test(int arg) {
@@ -192,5 +192,20 @@ namespace ns {
         MEMSAFE_UNSAFE Shared<RecursiveRef> unsafe_recursive; // Unsafe
     };
 
+    void bugfix_11() { // https://github.com/rsashka/memsafe/issues/11
+        MEMSAFE_BASELINE(900_011_000);
+        std::vector vect(100000, 0);
+        auto x = (vect.begin());
+        vect = {};
+        std::sort(x, vect.end()); // Error
+    }
+    
+    void bugfix_12() { // https://github.com/rsashka/memsafe/issues/12
+        MEMSAFE_BASELINE(900_012_000);
+        std::vector vect(100000, 0);
+        auto& y = vect[0];
+        vect = {};
+        y += 1; // Error
+    }
 }
 
