@@ -104,6 +104,11 @@ namespace {
         }
 
         void Dump(raw_ostream & out) {
+            for (auto &elem : m_logs) {
+                out << "    \"" << elem.second.substr(0, elem.second.find(" ", 7)) << "\",\n";
+            }
+            out << "\n";
+
             out << MEMSAFE_KEYWORD_START_LOG;
             for (auto &elem : m_logs) {
                 out << LocToStr(elem.first);
@@ -1128,7 +1133,10 @@ namespace {
 
         const DeclRefExpr * getInitializer(const VarDecl &decl) {
             if (const CXXMemberCallExpr * calle = dyn_cast_or_null<CXXMemberCallExpr>(getExprInitializer(decl))) {
-                return dyn_cast<DeclRefExpr>(calle->getImplicitObjectArgument()->IgnoreUnlessSpelledInSource()->IgnoreImplicit());
+                return dyn_cast<DeclRefExpr>(removeTempExpr(calle->getImplicitObjectArgument()));
+            }
+            if (const CXXOperatorCallExpr * op = dyn_cast_or_null<CXXOperatorCallExpr>(getExprInitializer(decl))) {
+                return dyn_cast<DeclRefExpr>(removeTempExpr(op->getArg(0)));
             }
             return nullptr;
         }
@@ -1148,7 +1156,7 @@ namespace {
                 return nullptr;
             }
 
-            if (isa<DeclRefExpr>(result) || isa<CXXMemberCallExpr>(result) || isa<CXXConstructExpr>(result) || isa<UnaryOperator>(result)) {
+            if (isa<DeclRefExpr>(result) || isa<CXXMemberCallExpr>(result) || isa<CXXOperatorCallExpr>(result) || isa<CXXConstructExpr>(result) || isa<UnaryOperator>(result)) {
                 return result;
             }
 
@@ -1296,7 +1304,7 @@ namespace {
             return true;
         }
 
-        bool VisitCallExpr(const CallExpr *call) {
+        bool VisitCallExpr(const CallExpr * call) {
             if (isEnabled() && call->getNumArgs() == 2) {
 
                 if (call->getDirectCallee()-> getQualifiedNameAsString().compare("std::swap") != 0) {
@@ -1329,7 +1337,7 @@ namespace {
             return true;
         }
 
-        bool VisitCXXOperatorCallExpr(const CXXOperatorCallExpr *op) {
+        bool VisitCXXOperatorCallExpr(const CXXOperatorCallExpr * op) {
             if (isEnabled() && op->isAssignmentOp()) {
 
                 assert(op->getNumArgs() == 2);
@@ -1359,7 +1367,7 @@ namespace {
             return true;
         }
 
-        bool VisitReturnStmt(const ReturnStmt *ret) {
+        bool VisitReturnStmt(const ReturnStmt * ret) {
 
             if (isEnabled() && ret) {
 
@@ -1604,11 +1612,26 @@ namespace {
                 if (class_decl) {
                     checkTypeName(var->getLocation(), class_decl->getQualifiedNameAsString(), is_unsafe);
                 }
-                // The type (class) of the variable that the plugin should analyze
-                const char * found_type = checkClassNameTracking(class_decl);
+
+                // The type (class) of a reference type variable depends on the data 
+                // and may become invalid if the original data changes.
+
+                const DeclRefExpr * dre = nullptr;
+
+                if (Expr * init = var->getInit()) {
+                    dre = dyn_cast<DeclRefExpr>(removeTempExpr(init));
+                }
+
+                if (!dre) {
+                    dre = getInitializer(*var);
+                }
+
 
                 // The name of the variable
                 std::string var_name = var->getNameAsString();
+
+                // The type (class) of the variable that the plugin should analyze
+                const char * found_type = checkClassNameTracking(class_decl);
 
                 if (!found_type) {
 
@@ -1617,9 +1640,20 @@ namespace {
 
                     if (var->getType()->isPointerType()) {
                         if (is_unsafe) {
-                            LogWarning(var->getLocation(), "UNSAFE Raw pointer type");
+                            LogWarning(var->getLocation(), "UNSAFE Raw address");
                         } else {
-                            LogError(var->getLocation(), "Raw pointer type");
+                            LogError(var->getLocation(), "Raw address");
+                        }
+                    }
+
+                    if (var->getType()->isPointerType() || var->getType()-> isReferenceType()) {
+                        if (dre) {
+                            std::string depend_name = dre->getDecl()->getNameAsString();
+
+                            m_scopes.back().dependent.emplace(var_name, depend_name);
+                            m_scopes.back().blocker.emplace(depend_name, std::vector<SourceLocation>({dre->getLocation()}));
+
+                            LogOnly(var->getLocation(), std::format("{}:raw-addr=>{}", var_name, depend_name));
                         }
                     }
 
@@ -1643,19 +1677,6 @@ namespace {
                         }
                     } else {
                         LogOnly(var->getLocation(), std::format("Var found {}:{}", var_name, found_type));
-                    }
-
-                    // The type (class) of a reference type variable depends on the data 
-                    // and may become invalid if the original data changes.
-
-                    const DeclRefExpr * dre = nullptr;
-
-                    if (Expr * init = var->getInit()) {
-                        dre = dyn_cast<DeclRefExpr>(init->IgnoreUnlessSpelledInSource()->IgnoreImplicit());
-                    }
-
-                    if (!dre) {
-                        dre = getInitializer(*var);
                     }
 
                     if (dre) {
