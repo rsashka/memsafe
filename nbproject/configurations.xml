@@ -4,6 +4,7 @@
     <logicalFolder name="SourceFiles"
                    displayName="Исходные файлы"
                    projectFiles="true">
+      <itemPath>_cycles.cpp</itemPath>
       <itemPath>_example.cpp</itemPath>
       <itemPath>memsafe_clang.cpp</itemPath>
       <itemPath>memsafe_test.cpp</itemPath>
@@ -64,6 +65,12 @@
           </linkerLibItems>
         </linkerTool>
       </compileType>
+      <item path="_cycles.cpp" ex="false" tool="1" flavor2="0">
+        <ccTool>
+          <commandLine>-std=c++20 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -Xclang -plugin-arg-memsafe -Xclang log -Xclang -plugin-arg-memsafe -Xclang level=warning</commandLine>
+          <additionalDep>memsafe_clang.so</additionalDep>
+        </ccTool>
+      </item>
       <item path="_example.cpp" ex="false" tool="1" flavor2="0">
         <ccTool>
           <commandLine>-std=c++20 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -Xclang -plugin-arg-memsafe -Xclang log -Xclang -plugin-arg-memsafe -Xclang level=warning</commandLine>
@@ -95,6 +102,8 @@
       </toolsSet>
       <compileType>
       </compileType>
+      <item path="_cycles.cpp" ex="false" tool="1" flavor2="0">
+      </item>
       <item path="_example.cpp" ex="false" tool="1" flavor2="0">
       </item>
       <item path="memsafe.h" ex="false" tool="3" flavor2="0">
@@ -126,6 +135,8 @@
           <developmentMode>5</developmentMode>
         </asmTool>
       </compileType>
+      <item path="_cycles.cpp" ex="false" tool="1" flavor2="0">
+      </item>
       <item path="_example.cpp" ex="false" tool="1" flavor2="0">
       </item>
       <item path="memsafe.h" ex="false" tool="3" flavor2="0">

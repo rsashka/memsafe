@@ -595,95 +595,100 @@ TEST(MemSafe, Plugin) {
 
 
     std::vector<std::string> diag({
-        "#log #201",
-        "#log #201",
-        "#log #202",
-        "#log #202",
-        "#log #202",
-        "#err #204",
-        "#err #204",
-        "#log #207",
-        "#log #207",
-        "#log #208",
-        "#err #209",
-        "#log #209",
-        "#warn #208",
-        "#err #209",
-        "#log #301",
-        "#log #301",
-        "#log #302",
-        "#warn #301",
-        "#warn #302",
-        "#err #303",
-        "#log #303",
-        "#log #401",
-        "#log #402",
-        "#log #501",
-        "#log #901",
-        "#log #902",
-        "#log #903",
-        "#log #903",
-        "#log #1001",
-        "#log #1002",
-        "#log #1003",
-        "#log #2003",
-        "#log #2004",
-        "#err #3002",
-        "#log #3002",
-        "#err #3003",
-        "#log #3003",
-        "#log #3003",
-        "#log #4101",
-        "#log #4103",
-        "#log #4105",
-        "#log #4201",
-        "#log #4202",
-        "#err #4301",
-        "#log #4302",
-        "#warn #4302",
-        "#log #4401",
-        "#err #4402",
-        "#err #4403",
-        "#log #4404",
-        "#log #4501",
-        "#err #4503",
-        "#err #4504",
-        "#log #4505",
-        "#log #4507",
-        "#log #4508",
-        "#err #4510",
-        "#log #4513",
-        "#warn #4513",
-        "#err #4515",
-        "#log #4601",
-        "#err #4602",
-        "#log #4603",
-        "#warn #4603",
-        "#err #4701",
-        "#log #4702",
-        "#log #4703",
-        "#log #4704",
-        "#log #4704",
-        "#log #4801",
-        "#err #7003",
-        "#log #7004",
-        "#log #7005",
-        "#err #7006",
-        "#log #7007",
-        "#log #7009",
-        "#err #7010",
-        "#log #7011",
-        "#err #7012",
-        "#err #8901",
-        "#log #9901",
-        "#err #10004",
-        "#err #10005",
-        "#err #10008",
-        "#err #10009",
-        "#warn #10013",
-        "#warn #10014",
-        "#warn #10015",
-        "#warn #10016",
+    "#log #201",
+    "#log #201",
+    "#log #202",
+    "#log #202",
+    "#log #202",
+    "#err #204",
+    "#err #204",
+    "#log #207",
+    "#log #207",
+    "#log #208",
+    "#err #209",
+    "#log #209",
+    "#warn #208",
+    "#err #209",
+    "#log #301",
+    "#log #301",
+    "#log #302",
+    "#warn #301",
+    "#warn #302",
+    "#err #303",
+    "#log #303",
+    "#log #401",
+    "#log #402",
+    "#log #501",
+    "#log #901",
+    "#log #902",
+    "#log #903",
+    "#log #903",
+    "#log #1001",
+    "#log #1002",
+    "#log #1003",
+    "#log #2003",
+    "#log #2004",
+    "#err #3002",
+    "#log #3002",
+    "#err #3003",
+    "#log #3003",
+    "#log #3003",
+    "#log #4101",
+    "#log #4103",
+    "#log #4105",
+    "#log #4201",
+    "#log #4202",
+    "#err #4301",
+    "#log #4302",
+    "#warn #4302",
+    "#log #4401",
+    "#err #4402",
+    "#err #4403",
+    "#log #4404",
+    "#log #4501",
+    "#err #4503",
+    "#err #4504",
+    "#log #4505",
+    "#log #4507",
+    "#log #4508",
+    "#err #4510",
+    "#log #4513",
+    "#warn #4513",
+    "#err #4515",
+    "#log #4601",
+    "#err #4602",
+    "#log #4603",
+    "#warn #4603",
+    "#err #4701",
+    "#log #4702",
+    "#log #4703",
+    "#log #4704",
+    "#log #4704",
+    "#log #4801",
+    "#err #7003",
+    "#log #7004",
+    "#log #7005",
+    "#err #7006",
+    "#log #7007",
+    "#log #7009",
+    "#err #7010",
+    "#log #7011",
+    "#err #7012",
+    "#err #8901",
+    "#log #9901",
+//    "#log #900011002",
+//    "#log #900011002",
+//    "#log #900011003",
+//    "#log #900011003",
+//    "#warn #900011003",
+//    "#err #900011004",
+//    "#log #900011004",
+//    "#log #900012002",
+//    "#log #900012003",
+//    "#log #900012003",
+//    "#log #900012004",
+//    "#warn #900012003",
+//    "#err #900012004",
 
         //bugfix_11()
         "#log #900011002",
@@ -701,6 +706,127 @@ TEST(MemSafe, Plugin) {
         "#log #900012004",
         "#warn #900012003",
         "#err #900012004",
+    });
+
+    size_t pos = log_output.find(MEMSAFE_KEYWORD_START_LOG);
+    ASSERT_TRUE(pos != std::string::npos);
+    std::string log_str = log_output.substr(pos + strlen(MEMSAFE_KEYWORD_START_LOG), log_output.find("\n\n", pos + strlen(MEMSAFE_KEYWORD_START_LOG)) - pos - strlen(MEMSAFE_KEYWORD_START_LOG));
+
+    //    std::cout << "\n" << log_str << "\n\n";
+
+    std::vector< std::string> log;
+    SplitString(log_str, '\n', &log);
+
+    ASSERT_TRUE(log.size()) << log_str;
+
+    while (!log.empty() && !diag.empty()) {
+
+        if (log.front().find(diag.front()) != std::string::npos) {
+            log.erase(log.begin());
+            diag.erase(diag.begin());
+        } else {
+
+            ASSERT_TRUE(diag.front().find(" #") != std::string::npos) << diag.front();
+
+            size_t diag_line = atoi(diag.front().data() + diag.front().find(" #") + 2);
+            ASSERT_TRUE(diag_line) << diag.front();
+
+            size_t skip = log.front().find(" #");
+            ASSERT_TRUE(skip != std::string::npos) << log.front();
+
+            ASSERT_TRUE(log.front().find(" #", skip + 2) != std::string::npos) << log.front();
+
+            size_t log_line = atoi(log.front().data() + log.front().find(" #", skip + 2) + 2);
+            ASSERT_TRUE(log_line) << log.front();
+
+            if (log_line > diag_line) {
+                ADD_FAILURE() << "In log not found: " << log.front();
+                log.erase(log.begin());
+            } else if (log_line < diag_line) {
+                ADD_FAILURE() << "In diag not found: " << diag.front();
+                diag.erase(diag.begin());
+            } else {
+                ADD_FAILURE() << "Diag expected: \"" << diag.front() << "\" but found \"" << log.front() << "\"";
+                log.erase(log.begin());
+                diag.erase(diag.begin());
+            }
+        }
+    }
+
+    for (auto &elem : log) {
+        ADD_FAILURE() << "Log not found: " << elem;
+    }
+    for (auto &elem : diag) {
+        ADD_FAILURE() << "Diag not found: " << elem;
+    }
+
+}
+
+TEST(MemSafe, Cycles) {
+
+    namespace fs = std::filesystem;
+
+
+    // Example of running a plugin to compile a file
+
+    /* The plugin operation is checked as follows.
+     * A specific file with examples of template usage from the metsafe/ file is compiled
+     * The example file contains correct C++ code, 
+     * but the variables in it are used both correctly and with violations of the rules.
+     * 
+     * When compiling a file with an analyzer plugin, the debug output is written to a file.
+     * This file is read in the test and debug messages of the plugin 
+     * are searched for in it (both successful and unsuccessful checks).
+     * 
+     * If all check messages are found, the test is considered successful.
+     */
+
+    std::string cmd = "clang-20";
+    cmd += " -std=c++20 -ferror-limit=500 ";
+    cmd += " -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe ";
+    cmd += " -Xclang -plugin-arg-memsafe -Xclang log ";
+    cmd += " -c _cycles.cpp > _cycles.cpp.log";
+
+    const char * file_log = "_cycles.cpp.log";
+    fs::remove(file_log);
+
+    int err = std::system(cmd.c_str());
+
+    ASSERT_TRUE(fs::exists(file_log));
+    std::ifstream log_file(file_log);
+
+    ASSERT_TRUE(log_file.is_open());
+
+    std::stringstream log_buffer;
+    log_buffer << log_file.rdbuf();
+
+    std::string log_output = log_buffer.str();
+    log_file.close();
+
+
+    ASSERT_TRUE(!log_output.empty());
+
+    ASSERT_TRUE(log_output.find("Enable dump and process logger") != std::string::npos &&
+            log_output.find("unprocessed attribute!") == std::string::npos)
+            << log_output;
+
+
+    std::vector<std::string> diag({
+
+        "#err #112",
+        "#err #116",
+        "#err #120",
+        "#err #124",
+        "#err #128",
+        "#err #132",
+        "#warn #10013",
+        "#warn #10017",
+        "#warn #10021",
+        "#warn #10025",
+        "#warn #10029",
+        "#warn #10030",
+        "#warn #10031",
+        "#warn #10032",
     });
 
     size_t pos = log_output.find(MEMSAFE_KEYWORD_START_LOG);
