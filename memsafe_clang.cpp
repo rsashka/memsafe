@@ -104,10 +104,10 @@ namespace {
         }
 
         void Dump(raw_ostream & out) {
-            for (auto &elem : m_logs) {
-                out << "    \"" << elem.second.substr(0, elem.second.find(" ", 7)) << "\",\n";
-            }
-            out << "\n";
+//                        for (auto &elem : m_logs) {
+//                            out << "    \"" << elem.second.substr(0, elem.second.find(" ", 7)) << "\",\n";
+//                        }
+//                        out << "\n";
 
             out << MEMSAFE_KEYWORD_START_LOG;
             for (auto &elem : m_logs) {
@@ -566,6 +566,12 @@ namespace {
      * 
      */
 
+    enum LogLevel : uint8_t {
+        INFO = 0,
+        WARN = 1,
+        ERR = 3,
+    };
+
     class MemSafePlugin : public RecursiveASTVisitor<MemSafePlugin> {
     public:
         static inline const char * ERROR_TYPE = MEMSAFE_KEYWORD_ERROR "-type";
@@ -641,6 +647,8 @@ namespace {
         SourceLocation m_dump_location;
         SourceLocation m_trace_location;
 
+        typedef std::map<std::string, SourceLocation> CycleItemList;
+
         const CompilerInstance &m_CI;
 
         MemSafePlugin(const CompilerInstance &instance) :
@@ -699,8 +707,25 @@ namespace {
             return "0";
         }
 
-        void LogOnly(SourceLocation loc, std::string str, SourceLocation hash = SourceLocation(), std::string prefix = "log") {
+        //        std::string LogMessage(SourceLocation loc, std::string str, SourceLocation hash = SourceLocation(), LogLevel level = LogLevel::INFO) {
+        //            }
+        //
+        //        }
+
+        void LogOnly(SourceLocation loc, std::string str, SourceLocation hash = SourceLocation(), LogLevel level = LogLevel::INFO) {
             if (logger) {
+                const char * prefix = nullptr;
+                switch (level) {
+                    case LogLevel::INFO:
+                        prefix = "log";
+                        break;
+                    case LogLevel::WARN:
+                        prefix = "warn";
+                        break;
+                    case LogLevel::ERR:
+                        prefix = "err";
+                        break;
+                }
                 logger->Log(loc, std::format("#{} #{} {}", prefix, hash.isValid() ? LogPos(hash) : LogPos(loc), str));
             }
         }
@@ -709,14 +734,14 @@ namespace {
             getDiag().Report(loc, getDiag().getCustomDiagID(
                     getLevel(clang::DiagnosticsEngine::Warning), "%0"))
                     .AddString(str);
-            LogOnly(loc, str, hash, "warn");
+            LogOnly(loc, str, hash, LogLevel::WARN);
         }
 
         void LogError(SourceLocation loc, std::string str, SourceLocation hash = SourceLocation()) {
             getDiag().Report(loc, getDiag().getCustomDiagID(
                     getLevel(clang::DiagnosticsEngine::Error), "%0"))
                     .AddString(str);
-            LogOnly(loc, str, hash, "err");
+            LogOnly(loc, str, hash, LogLevel::ERR);
         }
 
         static std::string makeHelperString(const std::set<std::string> &set) {
@@ -824,6 +849,71 @@ namespace {
                     m_auto_type.emplace(second.begin());
                 } else if (first.compare(INVALIDATE_FUNC) == 0) {
                     m_invalidate_func.emplace(second.begin());
+                }
+            }
+            return result;
+        }
+
+        std::set<const CXXRecordDecl *> MakeParentsList(const CXXRecordDecl &decl) {
+
+            std::set<const CXXRecordDecl *> result({&decl});
+
+            if (const ClassTemplateSpecializationDecl * Special = dyn_cast<const ClassTemplateSpecializationDecl> (&decl)) {
+
+                const TemplateArgumentList& ArgsList = Special->getTemplateArgs();
+                const TemplateParameterList* TemplateList = Special->getSpecializedTemplate()->getTemplateParameters();
+
+                int Index = 0;
+                for (auto TemplateToken = TemplateList->begin(); TemplateToken != TemplateList->end(); TemplateToken++) {
+                    if ((*TemplateToken)->getKind() == Decl::Kind::TemplateTypeParm) {
+                        if (const CXXRecordDecl * type = ArgsList[Index].getAsType()->getAsCXXRecordDecl()) {
+                            result.emplace(type);
+                        }
+                    }
+                    Index++;
+                }
+            }
+
+            for (auto iter = decl.bases_begin(); iter != decl.bases_end(); iter++) {
+                if (iter->isBaseOfClass()) {
+                    if (const CXXRecordDecl * base = iter->getType()->getAsCXXRecordDecl()) {
+                        result.emplace(base);
+                    }
+                }
+            }
+            return result;
+        }
+
+        bool checkCycles(const CXXRecordDecl &decl, std::set<const CXXRecordDecl *> & list) {
+
+            CycleItemList names;
+            for (auto & elem : list) {
+                names.emplace(elem->getQualifiedNameAsString(), elem->getLocation());
+            }
+
+
+            bool result = true;
+            for (auto cls : list) {
+
+                for (auto field = cls->field_begin(); field != cls->field_end(); field++) {
+                    if (const CXXRecordDecl * type = field->getType()->getAsCXXRecordDecl()) {
+
+                        bool is_unsafe = m_scopes.testUnsafe().isValid() || checkDeclUnsafe(*cls) || checkDeclUnsafe(*type) || checkDeclUnsafe(**field);
+                        auto found = names.find(cls->getQualifiedNameAsString());
+
+                        if (found != names.end()) {
+
+                            if (is_unsafe) {
+                                LogWarning(field->getLocation(), std::format("UNSAFE The class '{}' has a circular reference through class '{}'",
+                                        decl.getQualifiedNameAsString(), type->getQualifiedNameAsString()));
+                            } else {
+                                LogError(field->getLocation(), std::format("The class '{}' has a circular reference through class '{}'",
+                                        decl.getQualifiedNameAsString(), type->getQualifiedNameAsString()));
+                            }
+
+                            result = false;
+                        }
+                    }
                 }
             }
             return result;
@@ -1495,47 +1585,6 @@ namespace {
 
                 } else {
 
-                    if (SHARED_TYPE == found_type) {
-
-                        std::string class_name = m_scopes.getClassName();
-
-                        if (class_decl->getKind() == clang::Decl::Kind::ClassTemplateSpecialization) {
-
-                            const clang::ClassTemplateSpecializationDecl* Special = static_cast<const clang::ClassTemplateSpecializationDecl*> (class_decl);
-                            const clang::TemplateArgumentList& ArgsList = Special->getTemplateArgs();
-                            const clang::TemplateParameterList* TemplateList = Special->getSpecializedTemplate()->getTemplateParameters();
-
-                            int Index = 0;
-                            for (clang::TemplateParameterList::const_iterator
-                                TemplateToken = TemplateList->begin();
-                                    TemplateToken != TemplateList->end(); TemplateToken++) {
-
-                                if ((*TemplateToken)->getKind() == clang::Decl::Kind::TemplateTypeParm) {
-
-                                    if (const CXXRecordDecl * cls = ArgsList[Index].getAsType()->getAsCXXRecordDecl()) {
-
-                                        if (class_name.compare(cls->getQualifiedNameAsString()) == 0) {
-                                            if (is_unsafe) {
-                                                LogWarning(field->getLocation(), std::format("UNSAFE potentially recursive pointer to {}", class_name));
-                                            } else {
-                                                LogError(field->getLocation(), std::format("Potentially recursive pointer to {}", class_name));
-                                            }
-                                        } else {
-                                            LogOnly(field->getLocation(), std::format("A circular reference from field '{}:{}' for class '{}' is not created.", var_name, found_type, class_name));
-                                        }
-                                    }
-                                }
-                            }
-                            Index++;
-                        } else {
-                            LogOnly(field->getLocation(), std::format("Field '{}:{}' found in '{}'", var_name, found_type, class_name));
-                        }
-
-                    } else {
-                        // The remaining types (classes) are used for safe memory management.
-                        assert(!found_type);
-                    }
-
                     if (field->getType()->isPointerType()) {
                         if (is_unsafe) {
                             LogWarning(field->getLocation(), "UNSAFE field type raw pointer");
@@ -1587,6 +1636,9 @@ namespace {
             if (isEnabled()) {
 
                 m_scopes.PushScope(decl->getLocation(), decl, m_scopes.testUnsafe());
+
+                auto list = MakeParentsList(*decl);
+                checkCycles(*decl, list);
 
                 RecursiveASTVisitor<MemSafePlugin>::TraverseCXXRecordDecl(decl);
 
