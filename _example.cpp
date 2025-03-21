@@ -171,27 +171,6 @@ namespace ns {
     }
 
 
-
-
-    MEMSAFE_BASELINE(10000);
-
-    class RecursiveRef {
-    public:
-        RecursiveRef * ref_pointer; // Error
-        std::shared_ptr<RecursiveRef> ref_shared; // Error
-        std::weak_ptr<RecursiveRef> ref_weak;
-
-        Auto<int, int&> ref_int; // Error
-        Shared<RecursiveRef> recursive; // Error
-        Weak<Shared<RecursiveRef>> ref_weak2;
-        Class<RecursiveRef> reference;
-
-        MEMSAFE_UNSAFE RecursiveRef * unsafe_pointer; // Unsafe
-        MEMSAFE_UNSAFE std::shared_ptr<RecursiveRef> unsafe_shared; // Unsafe
-        MEMSAFE_UNSAFE Auto<int, int&> unsafe_ref_int; // Unsafe
-        MEMSAFE_UNSAFE Shared<RecursiveRef> unsafe_recursive; // Unsafe
-    };
-
     void bugfix_11() { // https://github.com/rsashka/memsafe/issues/11
         MEMSAFE_BASELINE(900_011_000);
         std::vector vect(100000, 0);
