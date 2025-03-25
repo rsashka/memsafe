@@ -18,6 +18,7 @@
     <logicalFolder name="ResourceFiles"
                    displayName="Файлы ресурсов"
                    projectFiles="true">
+      <itemPath>shared.memsafe</itemPath>
     </logicalFolder>
     <logicalFolder name="TestFiles"
                    displayName="Файлы тестов"
@@ -62,28 +63,30 @@
             <linkerLibStdlibItem>PosixThreads</linkerLibStdlibItem>
             <linkerLibLibItem>gtest</linkerLibLibItem>
             <linkerLibLibItem>gtest_main</linkerLibLibItem>
+            <linkerLibLibItem>yaml-cpp</linkerLibLibItem>
           </linkerLibItems>
         </linkerTool>
       </compileType>
-      <item path="_cycles.cpp" ex="false" tool="1" flavor2="0">
+      <item path="_cycles.cpp" ex="true" tool="1" flavor2="0">
         <ccTool>
           <commandLine>-std=c++20 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -Xclang -plugin-arg-memsafe -Xclang log -Xclang -plugin-arg-memsafe -Xclang level=warning</commandLine>
-          <additionalDep>memsafe_clang.so</additionalDep>
+          <additionalDep>memsafe_clang.so shared.memsafe</additionalDep>
         </ccTool>
       </item>
-      <item path="_example.cpp" ex="false" tool="1" flavor2="0">
+      <item path="_example.cpp" ex="true" tool="1" flavor2="0">
         <ccTool>
           <commandLine>-std=c++20 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -Xclang -plugin-arg-memsafe -Xclang log -Xclang -plugin-arg-memsafe -Xclang level=warning</commandLine>
-          <additionalDep>memsafe_clang.so</additionalDep>
+          <additionalDep>memsafe_clang.so shared.memsafe</additionalDep>
         </ccTool>
       </item>
       <item path="memsafe.h" ex="false" tool="3" flavor2="0">
       </item>
-      <item path="memsafe_clang.cpp" ex="false" tool="3" flavor2="0">
+      <item path="memsafe_clang.cpp" ex="true" tool="3" flavor2="0">
         <customTool>
-          <customToolCommandline>clang-20 -fPIC -shared -o memsafe_clang.so memsafe_clang.cpp `llvm-config-20 --cppflags --ldflags --system-libs --libs all` -std=c++20</customToolCommandline>
+          <customToolCommandline>clang-20 -fPIC -shared -o memsafe_clang.so memsafe_clang.cpp `llvm-config-20 --cppflags --ldflags --system-libs --libs all` -std=c++20  -lyaml-cpp</customToolCommandline>
           <customToolDescription>"\033[1;46;34m"Building a plugin memsafe_clang.so"\033[0m"</customToolDescription>
           <customToolOutputs>memsafe_clang.so</customToolOutputs>
+          <customToolAdditionalDep>memsafe_plugin.h</customToolAdditionalDep>
         </customTool>
       </item>
       <item path="memsafe_plugin.h" ex="false" tool="3" flavor2="0">
@@ -92,6 +95,14 @@
         <ccTool>
           <additionalDep>memsafe_clang.so</additionalDep>
         </ccTool>
+      </item>
+      <item path="shared.memsafe" ex="false" tool="3" flavor2="0">
+        <customTool>
+          <customToolCommandline>clang-20 -std=c++20 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -Xclang -plugin-arg-memsafe -Xclang level=warning -Xclang -plugin-arg-memsafe -Xclang shared-write -fsyntax-only _example.cpp</customToolCommandline>
+          <customToolDescription>"\033[1;46;34m"Building shared.memsafe"\033[0m"</customToolDescription>
+          <customToolOutputs>shared.memsafe</customToolOutputs>
+          <customToolAdditionalDep>memsafe_clang.so _example.cpp _cycles.cpp</customToolAdditionalDep>
+        </customTool>
       </item>
     </conf>
     <conf name="Debug" type="1">
@@ -113,6 +124,8 @@
       <item path="memsafe_plugin.h" ex="false" tool="3" flavor2="0">
       </item>
       <item path="memsafe_test.cpp" ex="false" tool="1" flavor2="0">
+      </item>
+      <item path="shared.memsafe" ex="false" tool="3" flavor2="0">
       </item>
     </conf>
     <conf name="Release" type="1">
@@ -146,6 +159,8 @@
       <item path="memsafe_plugin.h" ex="false" tool="3" flavor2="0">
       </item>
       <item path="memsafe_test.cpp" ex="false" tool="1" flavor2="0">
+      </item>
+      <item path="shared.memsafe" ex="false" tool="3" flavor2="0">
       </item>
     </conf>
   </confs>

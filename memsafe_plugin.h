@@ -8,7 +8,15 @@
 #include <map>
 #include <unordered_set>
 
+#include <yaml-cpp/yaml.h>
+#include <stdio.h>
+#include <filesystem>
+#include <fstream>
+#include <chrono>
+
 #include "memsafe.h"
+
+namespace fs = std::filesystem;
 
 namespace memsafe {
 
@@ -178,14 +186,132 @@ namespace memsafe {
      * 
      * 
      */
-
-    template <typename T, typename H>
-    class mapmap : protected std::map<std::string, T> {
-    protected:
-        std::map<H, std::string> m_hash;
+    class MemSafeShared {
     public:
 
-    };
+        typedef std::map<std::string, std::string> SharedList;
 
+        std::string m_shared_file;
+        std::string m_input_file;
+
+        MemSafeShared(std::string_view shared, std::string_view input) : m_shared_file(shared), m_input_file(input) {
+        }
+
+        SharedList ReadSharedFile() {
+
+            SharedList result;
+            YAML::Node file = YAML::LoadFile(m_shared_file);
+            for (auto it = file.begin(); it != file.end(); it++) {
+                for (auto cls = it->second.begin(); cls != it->second.end(); cls++) {
+                    if (cls->first.as<std::string>().compare("classes") == 0) {
+                        for (auto name = cls->second.begin(); name != cls->second.end(); name++) {
+                            result[name->first.as<std::string>()] = name->second.as<std::string>();
+                        }
+                    }
+                }
+            }
+            return result;
+        }
+
+        void WriteSharedFile(const SharedList &list) {
+
+            YAML::Emitter writer;
+            write_help(writer);
+
+            writer << YAML::DoubleQuoted;
+            writer << YAML::BeginMap;
+
+            std::string input_modified;
+            try {
+                input_modified = std::format("{}", fs::last_write_time(m_input_file));
+            } catch (std::exception &ex) {
+                input_modified = ex.what();
+            }
+
+
+            if (fs::exists(fs::path(m_shared_file))) {
+                YAML::Node old = YAML::LoadFile(m_shared_file);
+
+                for (auto it = old.begin(); it != old.end(); it++) {
+
+                    // File names at the top level of the map
+                    if (it->first.as<std::string>().compare(m_input_file)) {
+                        // Copy all except current file name
+                        writer << YAML::Key << it->first.as<std::string>();
+                        writer << YAML::Value << it->second;
+                        writer << YAML::Newline;
+                        writer << YAML::Newline;
+                    }
+
+                }
+
+                fs::path old_name(m_shared_file);
+                old_name += ".bak";
+                fs::rename(fs::path(m_shared_file), old_name);
+            }
+
+            {
+                writer << YAML::Key << m_input_file;
+                writer << YAML::Value;
+
+                writer << YAML::BeginMap;
+                {
+                    writer << YAML::Key << "modified";
+                    writer << YAML::Value << input_modified;
+
+                    writer << YAML::Key << "classes";
+                    writer << YAML::Value;
+
+                    writer << YAML::BeginMap;
+                    for (auto &elem : list) {
+                        writer << YAML::Key << elem.first;
+                        writer << YAML::Value << elem.second;
+                    }
+                    writer << YAML::EndMap;
+                }
+                writer << YAML::EndMap;
+            }
+            writer << YAML::EndMap;
+            writer << YAML::Newline;
+
+            std::ofstream shared(m_shared_file);
+            shared << writer.c_str();
+            shared.close();
+        }
+
+    protected:
+
+        void write_help(YAML::Emitter & emit) {
+
+            emit << YAML::Comment("") << YAML::Newline;
+            emit << YAML::Comment("This file is created automatically for circular reference analysis") << YAML::Newline;
+            emit << YAML::Comment("by the memsafe plugin https://github.com/rsashka/memsafe ") << YAML::Newline;
+            emit << YAML::Comment("when the C++ compiler uses multiple translation units.") << YAML::Newline;
+
+            emit << YAML::Comment("") << YAML::Newline;
+            emit << YAML::Comment("-------------------------------------------------------") << YAML::Newline;
+            emit << YAML::Comment("") << YAML::Newline;
+
+            emit << YAML::Comment("Since C++ compiles files separately, and the class (data structure)") << YAML::Newline;
+            emit << YAML::Comment("definition may be in another translation unit due to a forward declaration,") << YAML::Newline;
+            emit << YAML::Comment("two passes are required for the cyclic reference analyzer to work correctly.") << YAML::Newline;
+            emit << YAML::Comment("") << YAML::Newline;
+            emit << YAML::Comment("During the first pass, the plugin analyzes the file only for strong references") << YAML::Newline;
+            emit << YAML::Comment("in all base classes whose definition is present during the AST analysis.") << YAML::Newline;
+            emit << YAML::Comment("") << YAML::Newline;
+            emit << YAML::Comment("All results of the first analyzer pass are collected in one file") << YAML::Newline;
+            emit << YAML::Comment("each in its own section individually for each translation unit.") << YAML::Newline;
+            emit << YAML::Comment("This section contains a list of analyzed classes with a list of reference data types.") << YAML::Newline;
+            emit << YAML::Comment("(a list of class definitions that were found during the AST analysis).") << YAML::Newline;
+            emit << YAML::Comment("") << YAML::Newline;
+            emit << YAML::Comment("During the second pass, the analyzer loads one file and forms from it") << YAML::Newline;
+            emit << YAML::Comment("a list of classes, each with its own list of reference data types") << YAML::Newline;
+            emit << YAML::Comment("(it must be complete after the first pass is completed for all translation units).") << YAML::Newline;
+
+            emit << YAML::Comment("") << YAML::Newline;
+            emit << YAML::Comment("-------------------------------------------------------") << YAML::Newline;
+            emit << YAML::Comment("") << YAML::Newline;
+        }
+    };
 }
 #endif // INCLUDED_MEMSAFE_PLUGIN_H_

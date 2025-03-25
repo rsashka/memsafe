@@ -545,6 +545,93 @@ TEST(MemSafe, Separartor) {
     EXPECT_STREQ("111_111_111_111", SeparatorInsert(111'111'111'111, '_').c_str());
 }
 
+TEST(MemSafe, MemSafeShared) {
+
+    std::string filename = "unittest-shared.memsafe";
+
+    fs::remove(filename);
+    ASSERT_FALSE(fs::exists(filename));
+
+    {
+        MemSafeShared shared(filename, "file_empty.cpp");
+
+        shared.WriteSharedFile({});
+
+        ASSERT_TRUE(fs::exists(filename));
+        ASSERT_TRUE(shared.ReadSharedFile().empty());
+    }
+    {
+        MemSafeShared shared(filename, "file1.cpp");
+
+        shared.WriteSharedFile({
+            {"ns::class1", "filepos:1"},
+            {"ns::class2", "filepos:2"},
+        });
+
+        ASSERT_TRUE(fs::exists(filename));
+
+        MemSafeShared::SharedList list = shared.ReadSharedFile();
+
+        ASSERT_EQ(2, list.size());
+        ASSERT_STREQ("filepos:1", list["ns::class1"].c_str());
+        ASSERT_STREQ("filepos:2", list["ns::class2"].c_str());
+
+    }
+    {
+        MemSafeShared shared(filename, "file2.cpp");
+
+        ASSERT_TRUE(fs::exists(filename));
+
+        ASSERT_NO_THROW(shared.WriteSharedFile({
+            {"ns::class2", "filepos:2222"},
+            {"ns::class3", "filepos:3333"},
+        }));
+
+        ASSERT_TRUE(fs::exists(filename));
+
+        MemSafeShared::SharedList list = shared.ReadSharedFile();
+
+        ASSERT_EQ(3, list.size());
+        ASSERT_STREQ("filepos:1", list["ns::class1"].c_str());
+        ASSERT_STREQ("filepos:2222", list["ns::class2"].c_str());
+        ASSERT_STREQ("filepos:3333", list["ns::class3"].c_str());
+
+    }
+    fs::remove(filename);
+    filename += ".bak";
+    fs::remove(filename);
+}
+
+
+TEST(MemSafe, WeakList) {
+
+    LinkedWeakList<int> int_list;
+
+    ASSERT_TRUE(int_list.empty());
+    ASSERT_STREQ("nullptr", int_list.to_string().c_str()) << int_list.to_string();
+    ASSERT_EQ(0, int_list.size());
+    int_list.push_back(1);
+    ASSERT_STREQ("1 -> ", int_list.to_string().c_str()) << int_list.to_string();
+    ASSERT_EQ(1, int_list.size());
+    int_list.push_back(2);
+    ASSERT_STREQ("1 -> 2 -> ", int_list.to_string().c_str()) << int_list.to_string();
+    ASSERT_EQ(2, int_list.size());
+    int_list.push_back(3);
+    ASSERT_STREQ("1 -> 2 -> 3 -> ", int_list.to_string().c_str()) << int_list.to_string();
+    ASSERT_EQ(3, int_list.size());
+    int_list.push_front(0);
+    int_list.push_front(0);
+    ASSERT_STREQ("0 -> 0 -> 1 -> 2 -> 3 -> ", int_list.to_string().c_str()) << int_list.to_string();
+    ASSERT_EQ(5, int_list.size());
+    int_list.pop_front();
+    ASSERT_STREQ("0 -> 1 -> 2 -> 3 -> ", int_list.to_string().c_str()) << int_list.to_string();
+    ASSERT_EQ(4, int_list.size());
+    int_list.pop_back();
+    ASSERT_STREQ("0 -> 1 -> 2 -> ", int_list.to_string().c_str()) << int_list.to_string();
+    ASSERT_EQ(3, int_list.size());
+    ASSERT_FALSE(int_list.empty());
+}
+
 TEST(MemSafe, Plugin) {
 
     namespace fs = std::filesystem;
@@ -595,100 +682,100 @@ TEST(MemSafe, Plugin) {
 
 
     std::vector<std::string> diag({
-    "#log #201",
-    "#log #201",
-    "#log #202",
-    "#log #202",
-    "#log #202",
-    "#err #204",
-    "#err #204",
-    "#log #207",
-    "#log #207",
-    "#log #208",
-    "#err #209",
-    "#log #209",
-    "#warn #208",
-    "#err #209",
-    "#log #301",
-    "#log #301",
-    "#log #302",
-    "#warn #301",
-    "#warn #302",
-    "#err #303",
-    "#log #303",
-    "#log #401",
-    "#log #402",
-    "#log #501",
-    "#log #901",
-    "#log #902",
-    "#log #903",
-    "#log #903",
-    "#log #1001",
-    "#log #1002",
-    "#log #1003",
-    "#log #2003",
-    "#log #2004",
-    "#err #3002",
-    "#log #3002",
-    "#err #3003",
-    "#log #3003",
-    "#log #3003",
-    "#log #4101",
-    "#log #4103",
-    "#log #4105",
-    "#log #4201",
-    "#log #4202",
-    "#err #4301",
-    "#log #4302",
-    "#warn #4302",
-    "#log #4401",
-    "#err #4402",
-    "#err #4403",
-    "#log #4404",
-    "#log #4501",
-    "#err #4503",
-    "#err #4504",
-    "#log #4505",
-    "#log #4507",
-    "#log #4508",
-    "#err #4510",
-    "#log #4513",
-    "#warn #4513",
-    "#err #4515",
-    "#log #4601",
-    "#err #4602",
-    "#log #4603",
-    "#warn #4603",
-    "#err #4701",
-    "#log #4702",
-    "#log #4703",
-    "#log #4704",
-    "#log #4704",
-    "#log #4801",
-    "#err #7003",
-    "#log #7004",
-    "#log #7005",
-    "#err #7006",
-    "#log #7007",
-    "#log #7009",
-    "#err #7010",
-    "#log #7011",
-    "#err #7012",
-    "#err #8901",
-    "#log #9901",
-//    "#log #900011002",
-//    "#log #900011002",
-//    "#log #900011003",
-//    "#log #900011003",
-//    "#warn #900011003",
-//    "#err #900011004",
-//    "#log #900011004",
-//    "#log #900012002",
-//    "#log #900012003",
-//    "#log #900012003",
-//    "#log #900012004",
-//    "#warn #900012003",
-//    "#err #900012004",
+        "#log #201",
+        "#log #201",
+        "#log #202",
+        "#log #202",
+        "#log #202",
+        "#err #204",
+        "#err #204",
+        "#log #207",
+        "#log #207",
+        "#log #208",
+        "#err #209",
+        "#log #209",
+        "#warn #208",
+        "#err #209",
+        "#log #301",
+        "#log #301",
+        "#log #302",
+        "#warn #301",
+        "#warn #302",
+        "#err #303",
+        "#log #303",
+        "#log #401",
+        "#log #402",
+        "#log #501",
+        "#log #901",
+        "#log #902",
+        "#log #903",
+        "#log #903",
+        "#log #1001",
+        "#log #1002",
+        "#log #1003",
+        "#log #2003",
+        "#log #2004",
+        "#err #3002",
+        "#log #3002",
+        "#err #3003",
+        "#log #3003",
+        "#log #3003",
+        "#log #4101",
+        "#log #4103",
+        "#log #4105",
+        "#log #4201",
+        "#log #4202",
+        "#err #4301",
+        "#log #4302",
+        "#warn #4302",
+        "#log #4401",
+        "#err #4402",
+        "#err #4403",
+        "#log #4404",
+        "#log #4501",
+        "#err #4503",
+        "#err #4504",
+        "#log #4505",
+        "#log #4507",
+        "#log #4508",
+        "#err #4510",
+        "#log #4513",
+        "#warn #4513",
+        "#err #4515",
+        "#log #4601",
+        "#err #4602",
+        "#log #4603",
+        "#warn #4603",
+        "#err #4701",
+        "#log #4702",
+        "#log #4703",
+        "#log #4704",
+        "#log #4704",
+        "#log #4801",
+        "#err #7003",
+        "#log #7004",
+        "#log #7005",
+        "#err #7006",
+        "#log #7007",
+        "#log #7009",
+        "#err #7010",
+        "#log #7011",
+        "#err #7012",
+        "#err #8901",
+        "#log #9901",
+        //    "#log #900011002",
+        //    "#log #900011002",
+        //    "#log #900011003",
+        //    "#log #900011003",
+        //    "#warn #900011003",
+        //    "#err #900011004",
+        //    "#log #900011004",
+        //    "#log #900012002",
+        //    "#log #900012003",
+        //    "#log #900012003",
+        //    "#log #900012004",
+        //    "#warn #900012003",
+        //    "#err #900012004",
 
         //bugfix_11()
         "#log #900011002",

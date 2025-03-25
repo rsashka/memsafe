@@ -57,6 +57,7 @@
 #define MEMSAFE_KEYWORD_IGNORED "ignored"
 
 #define MEMSAFE_KEYWORD_AUTO_TYPE "auto-type"
+#define MEMSAFE_KEYWORD_WEAK_TYPE "weak-type"
 #define MEMSAFE_KEYWORD_SHARED_TYPE "shared-type"
 #define MEMSAFE_KEYWORD_INVALIDATE_FUNC  "invalidate-func"
 
@@ -88,6 +89,7 @@
 #define MEMSAFE_ERROR_TYPE(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_ERROR "-type", name)
 #define MEMSAFE_WARNING_TYPE(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_WARNING "-type", name)
 #define MEMSAFE_AUTO_TYPE(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_AUTO_TYPE, name)
+#define MEMSAFE_WEAK_TYPE(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_WEAK_TYPE, name)
 #define MEMSAFE_SHARED_TYPE(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_SHARED_TYPE, name)
 #define MEMSAFE_INVALIDATE_FUNC(name) MEMSAFE_ATTR(MEMSAFE_KEYWORD_INVALIDATE_FUNC, name)
 
@@ -677,6 +679,127 @@ namespace memsafe { // Begin define memory safety classes
     static_assert(std::is_standard_layout_v<Class<int>>);
 
 #pragma clang attribute pop
+    
+    /**
+     * An example of a linked list template implemented using weak pointers 
+     * (where strong references between the same data types are not allowed).
+     */
+
+    template <typename T>
+    struct LinkedWeakNode {
+        typedef std::weak_ptr<LinkedWeakNode<T>> WeakType;
+        WeakType next;
+        T data;
+
+        LinkedWeakNode(const T & value) : data(value) {
+        }
+    };
+
+    template <typename T>
+    class LinkedWeakList {
+    public:
+        typedef LinkedWeakNode<T> NodeType;
+        typedef std::shared_ptr<NodeType> SharedType;
+
+        SharedType m_head;
+        std::set<SharedType> m_data;
+
+        LinkedWeakList() : m_head(nullptr) {
+        }
+
+
+        // Function to Insert a new node at the beginning of the list
+
+        void push_front(T && data) {
+            SharedType node = std::make_shared<NodeType>(data);
+            m_data.insert(node);
+            node->next = m_head;
+            m_head = node;
+        }
+
+        void push_back(T && data) {
+            SharedType node = std::make_shared<NodeType>(data);
+
+            m_data.insert(node);
+
+            // If the linked list is empty, update the head to the new node
+            if (!m_head) {
+                m_head = node;
+                return;
+            }
+
+            // Traverse to the last node
+            SharedType temp = m_head;
+            while (temp->next.lock()) {
+                temp = temp->next.lock();
+            }
+
+            // Update the last node's next to the new node
+            temp->next = node;
+        }
+
+
+        // Function to Delete the first node of the list
+
+        void pop_front() {
+            if (!m_head) {
+                std::cerr << "List is empty." << std::endl;
+                return;
+            }
+            SharedType temp = m_head;
+            m_head = m_head->next.lock();
+            m_data.erase(temp);
+        }
+
+        // Function to Delete the last node of the list
+
+        void pop_back() {
+            if (!m_head) {
+                std::cerr << "List is empty." << std::endl;
+                return;
+            }
+
+            SharedType temp = m_head->next.lock();
+            if (!temp) {
+                m_data.erase(m_head);
+                m_head.reset();
+                return;
+            }
+
+            // Traverse to the second-to-last node
+            while (temp->next.lock()->next.lock()) {
+                temp = temp->next.lock();
+            }
+
+            //  Delete the last node
+            m_data.erase(temp->next.lock());
+        }
+
+        size_t size() {
+            return m_data.size();
+        }
+
+        size_t empty() {
+            return m_data.empty();
+        }
+
+        std::string to_string() {
+            if (!m_head) {
+                return "nullptr";
+            }
+
+            std::string result;
+
+            SharedType temp = m_head;
+            while (temp) {
+                result += std::to_string(temp->data);
+                result += " -> ";
+                temp = temp->next.lock();
+            }
+            return result;
+        }
+    };
+
 
 #ifndef DOXYGEN_SHOULD_SKIP_THIS
 
@@ -915,7 +1038,11 @@ namespace memsafe { // Begin define memory safety classes
     MEMSAFE_WARNING_TYPE("std::auto_ptr");
     MEMSAFE_WARNING_TYPE("std::shared_ptr");
 
+    MEMSAFE_SHARED_TYPE("std::shared_ptr");
     MEMSAFE_SHARED_TYPE("memsafe::Shared");
+
+    MEMSAFE_WEAK_TYPE("std::weak_ptr");
+    MEMSAFE_WEAK_TYPE("memsafe::Weak");
 
     MEMSAFE_AUTO_TYPE("memsafe::Auto");
     MEMSAFE_AUTO_TYPE("__gnu_cxx::__normal_iterator");
