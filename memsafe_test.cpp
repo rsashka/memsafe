@@ -139,16 +139,16 @@ TEST(MemSafe, Sizes) {
     EXPECT_EQ(16, sizeof (Weak<Shared<int, SyncTimedMutex>>));
     EXPECT_EQ(16, sizeof (Weak<Shared<int, SyncTimedShared>>));
 
-    EXPECT_EQ(16, sizeof (Auto<int, Shared<int>>));
-    EXPECT_EQ(16, sizeof (Auto<int, Shared<int, SyncSingleThread>>));
-    EXPECT_EQ(16, sizeof (Auto<int, Shared<int, SyncTimedMutex>>));
-    EXPECT_EQ(16, sizeof (Auto<int, Shared<int, SyncTimedShared>>));
+    EXPECT_EQ(16, sizeof (Locker<int, Shared<int>>));
+    EXPECT_EQ(16, sizeof (Locker<int, Shared<int, SyncSingleThread>>));
+    EXPECT_EQ(16, sizeof (Locker<int, Shared<int, SyncTimedMutex>>));
+    EXPECT_EQ(16, sizeof (Locker<int, Shared<int, SyncTimedShared>>));
 
-    EXPECT_EQ(8, sizeof (Auto<int, int&>));
-    EXPECT_EQ(8, sizeof (Auto<uint8_t, uint8_t&>));
-    EXPECT_EQ(8, sizeof (Auto<uint16_t, uint16_t&>));
-    EXPECT_EQ(8, sizeof (Auto<uint32_t, uint32_t&>));
-    EXPECT_EQ(8, sizeof (Auto<uint64_t, uint64_t&>));
+    EXPECT_EQ(8, sizeof (Locker<int, int&>));
+    EXPECT_EQ(8, sizeof (Locker<uint8_t, uint8_t&>));
+    EXPECT_EQ(8, sizeof (Locker<uint16_t, uint16_t&>));
+    EXPECT_EQ(8, sizeof (Locker<uint32_t, uint32_t&>));
+    EXPECT_EQ(8, sizeof (Locker<uint64_t, uint64_t&>));
 }
 
 TEST(MemSafe, Cast) {
@@ -162,47 +162,47 @@ TEST(MemSafe, Cast) {
 
     Value<int> value_int(0);
     int & take_value = *value_int;
-    Auto<int, int&> take_value2 = value_int.take();
+    Locker<int, int&> take_value2 = value_int.lock();
 
     Shared<int> shared_int(0);
 
     //    Auto<int, Shared<int>> take_shared = *shared_int;
-    Auto<int, Shared<int>::SharedType> take_shared1 = shared_int.take();
+    Locker<int, Shared<int>::SharedType> take_shared1 = shared_int.lock();
     //    int & take_shared1 = *shared_int;
 
     ASSERT_EQ(0, *take_shared1);
-    ASSERT_EQ(0, *shared_int.take());
+    ASSERT_EQ(0, *shared_int.lock());
     //    ASSERT_EQ(0, **shared_int);
-    *shared_int.take() = 11;
+    *shared_int.lock() = 11;
     //    **shared_int = 11;
     //    ASSERT_EQ(11, **shared_int);
-    ASSERT_EQ(11, *shared_int.take());
+    ASSERT_EQ(11, *shared_int.lock());
 
-    auto var_take_shared = shared_int.take();
+    auto var_take_shared = shared_int.lock();
     int & take_shared2 = *var_take_shared;
 
 
     Shared<int, SyncSingleThread> sync_int(22);
-    Auto<int, Shared<int, SyncSingleThread>::SharedType> take_sync_int = sync_int.take();
-    auto auto_sync_int = sync_int.take();
+    Locker<int, Shared<int, SyncSingleThread>::SharedType> take_sync_int = sync_int.lock();
+    auto auto_sync_int = sync_int.lock();
     //    auto auto_sync_int = *sync_int;
 
-    ASSERT_EQ(22, *sync_int.take());
+    ASSERT_EQ(22, *sync_int.lock());
     //    ASSERT_EQ(22, **sync_int);
 
     *auto_sync_int = 33;
     ASSERT_EQ(33, *auto_sync_int);
-    ASSERT_EQ(33, *sync_int.take());
+    ASSERT_EQ(33, *sync_int.lock());
     //    ASSERT_EQ(33, **sync_int);
 
-    int temp_sync = *sync_int.take();
-    *sync_int.take() = 44;
+    int temp_sync = *sync_int.lock();
+    *sync_int.lock() = 44;
     //    **sync_int = 44;
 
     ASSERT_EQ(33, temp_sync);
     ASSERT_EQ(44, *auto_sync_int);
     //    ASSERT_EQ(44, **sync_int);
-    ASSERT_EQ(44, *sync_int.take());
+    ASSERT_EQ(44, *sync_int.lock());
 
 
     auto weak_shared(shared_int.weak());
@@ -230,17 +230,17 @@ TEST(MemSafe, Cast) {
 
     //template <typename V, typename T = V, typename W = std::weak_ptr<T>> class VarWeak;
     //    ASSERT_NO_THROW(**weak_shared1);
-    ASSERT_NO_THROW(*weak_shared1.take());
+    ASSERT_NO_THROW(*weak_shared1.lock());
 
-    Auto<int, Shared<int>::SharedType> auto_shared(weak_shared1.take());
+    Locker<int, Shared<int>::SharedType> auto_shared(weak_shared1.lock());
     ASSERT_EQ(3, sync_int.use_count());
 
     //    auto auto_guard1(weak_guard1.take());
 
     //    ASSERT_NO_THROW(**sync_int);
-    ASSERT_NO_THROW(*sync_int.take());
+    ASSERT_NO_THROW(*sync_int.lock());
     {
-        auto taken = sync_int.take();
+        auto taken = sync_int.lock();
     }
 
     //    VarAuto<int, VarGuard<int, VarGuardData<int>>> auto_guard2(weak_guard1.take());
@@ -358,7 +358,7 @@ TEST(MemSafe, Threads) {
 
         std::thread other([&]() {
             try {
-                var_single.take();
+                var_single.lock();
             } catch (...) {
                 catched = true;
             }
@@ -381,7 +381,7 @@ TEST(MemSafe, Threads) {
                 const auto start = std::chrono::high_resolution_clock::now();
                 std::this_thread::sleep_for(100ms);
                 elapsed = std::chrono::high_resolution_clock::now() - start;
-                var_mutex.take();
+                var_mutex.lock();
             } catch (...) {
                 catched = true;
             }
@@ -401,9 +401,9 @@ TEST(MemSafe, Threads) {
 
         std::thread read([&]() {
             try {
-                auto a1 = var_recursive.take_const();
-                auto a2 = var_recursive.take_const();
-                auto a3 = var_recursive.take_const();
+                auto a1 = var_recursive.lock_const();
+                auto a2 = var_recursive.lock_const();
+                auto a3 = var_recursive.lock_const();
             } catch (...) {
                 not_catched = false;
             }
@@ -415,9 +415,9 @@ TEST(MemSafe, Threads) {
 
         std::thread write([&]() {
             try {
-                auto a1 = var_recursive.take();
-                auto a2 = var_recursive.take();
-                auto a3 = var_recursive.take();
+                auto a1 = var_recursive.lock();
+                auto a2 = var_recursive.lock();
+                auto a3 = var_recursive.lock();
             } catch (...) {
                 not_catched = false;
             }
@@ -545,7 +545,7 @@ TEST(MemSafe, Separartor) {
     EXPECT_STREQ("111_111_111_111", SeparatorInsert(111'111'111'111, '_').c_str());
 }
 
-TEST(MemSafe, MemSafeShared) {
+TEST(MemSafe, MemSafeFile) {
 
     std::string filename = "unittest-shared.memsafe";
 
@@ -553,55 +553,99 @@ TEST(MemSafe, MemSafeShared) {
     ASSERT_FALSE(fs::exists(filename));
 
     {
-        MemSafeShared shared(filename, "file_empty.cpp");
+        MemSafeFile file(filename, "file_empty.cpp");
 
-        shared.WriteSharedFile({});
+        file.WriteFile({
+        },
+        {
+        });
 
         ASSERT_TRUE(fs::exists(filename));
-        ASSERT_TRUE(shared.ReadSharedFile().empty());
+        MemSafeFile::ClassList shared;
+        MemSafeFile::ClassList other;
+        ASSERT_NO_THROW(file.ReadFile(shared, other));
+        ASSERT_TRUE(shared.empty());
+        ASSERT_TRUE(other.empty());
     }
     {
-        MemSafeShared shared(filename, "file1.cpp");
+        MemSafeFile file(filename, "file1.cpp");
 
-        shared.WriteSharedFile({
-            {"ns::class1", "filepos:1"},
-            {"ns::class2", "filepos:2"},
+        file.WriteFile({
+            {
+                "ns::class1", "filepos:1"
+            },
+            {
+                "ns::class2", "filepos:2"
+            },
+        },
+        {
+            {
+                "ns::other1", "filepos:1"
+            },
+            {
+                "ns::other2", "filepos:2"
+            },
         });
 
         ASSERT_TRUE(fs::exists(filename));
 
-        MemSafeShared::SharedList list = shared.ReadSharedFile();
+        MemSafeFile::ClassList shared;
+        MemSafeFile::ClassList other;
 
-        ASSERT_EQ(2, list.size());
-        ASSERT_STREQ("filepos:1", list["ns::class1"].c_str());
-        ASSERT_STREQ("filepos:2", list["ns::class2"].c_str());
+        ASSERT_NO_THROW(file.ReadFile(shared, other));
+
+        ASSERT_EQ(2, shared.size());
+        ASSERT_STREQ("filepos:1", shared["ns::class1"].c_str());
+        ASSERT_STREQ("filepos:2", shared["ns::class2"].c_str());
+
+        ASSERT_EQ(2, other.size());
+        ASSERT_STREQ("filepos:1", other["ns::other1"].c_str());
+        ASSERT_STREQ("filepos:2", other["ns::other2"].c_str());
 
     }
     {
-        MemSafeShared shared(filename, "file2.cpp");
+        MemSafeFile file(filename, "file2.cpp");
 
         ASSERT_TRUE(fs::exists(filename));
 
-        ASSERT_NO_THROW(shared.WriteSharedFile({
-            {"ns::class2", "filepos:2222"},
-            {"ns::class3", "filepos:3333"},
+        ASSERT_NO_THROW(file.WriteFile({
+            {
+                "ns::class2", "filepos:2222"
+            },
+            {
+                "ns::class3", "filepos:3333"
+            },
+        },
+        {
+            {
+                "ns::other2", "filepos:2222"
+            },
+            {
+                "ns::other3", "filepos:3333"
+            },
         }));
 
         ASSERT_TRUE(fs::exists(filename));
 
-        MemSafeShared::SharedList list = shared.ReadSharedFile();
+        MemSafeFile::ClassList shared;
+        MemSafeFile::ClassList other;
 
-        ASSERT_EQ(3, list.size());
-        ASSERT_STREQ("filepos:1", list["ns::class1"].c_str());
-        ASSERT_STREQ("filepos:2222", list["ns::class2"].c_str());
-        ASSERT_STREQ("filepos:3333", list["ns::class3"].c_str());
+        ASSERT_NO_THROW(file.ReadFile(shared, other));
 
+        ASSERT_EQ(3, shared.size());
+        ASSERT_STREQ("filepos:1", shared["ns::class1"].c_str());
+        ASSERT_STREQ("filepos:2222", shared["ns::class2"].c_str());
+        ASSERT_STREQ("filepos:3333", shared["ns::class3"].c_str());
+
+        ASSERT_EQ(3, other.size());
+        ASSERT_STREQ("filepos:1", other["ns::other1"].c_str());
+        ASSERT_STREQ("filepos:2222", other["ns::other2"].c_str());
+        ASSERT_STREQ("filepos:3333", other["ns::other3"].c_str());
     }
     fs::remove(filename);
     filename += ".bak";
     fs::remove(filename);
 }
-
 
 TEST(MemSafe, WeakList) {
 

@@ -5,8 +5,8 @@
 #include <string>
 #include <vector>
 #include <algorithm>
-#include <map>
 #include <unordered_set>
+#include <map>
 
 #include <yaml-cpp/yaml.h>
 #include <stdio.h>
@@ -186,34 +186,37 @@ namespace memsafe {
      * 
      * 
      */
-    class MemSafeShared {
+    class MemSafeFile {
     public:
 
-        typedef std::map<std::string, std::string> SharedList;
+        typedef std::map<std::string, std::string> ClassList;
 
-        std::string m_shared_file;
+        static constexpr const char * TAG_NAME_MODIFIED = "modified";
+
+        std::string m_file_name;
         std::string m_input_file;
 
-        MemSafeShared(std::string_view shared, std::string_view input) : m_shared_file(shared), m_input_file(input) {
+        MemSafeFile(std::string_view file, std::string_view input) : m_file_name(file), m_input_file(input) {
         }
 
-        SharedList ReadSharedFile() {
-
-            SharedList result;
-            YAML::Node file = YAML::LoadFile(m_shared_file);
+        void ReadFile(ClassList &shared, ClassList &other) {
+            YAML::Node file = YAML::LoadFile(m_file_name);
             for (auto it = file.begin(); it != file.end(); it++) {
                 for (auto cls = it->second.begin(); cls != it->second.end(); cls++) {
-                    if (cls->first.as<std::string>().compare("classes") == 0) {
+                    if (cls->first.as<std::string>().compare(MEMSAFE_KEYWORD_SHARED_TYPE) == 0) {
                         for (auto name = cls->second.begin(); name != cls->second.end(); name++) {
-                            result[name->first.as<std::string>()] = name->second.as<std::string>();
+                            shared[name->first.as<std::string>()] = name->second.as<std::string>();
+                        }
+                    } else if (cls->first.as<std::string>().compare(MEMSAFE_KEYWORD_OTHER_CLASS) == 0) {
+                        for (auto name = cls->second.begin(); name != cls->second.end(); name++) {
+                            other[name->first.as<std::string>()] = name->second.as<std::string>();
                         }
                     }
                 }
             }
-            return result;
         }
 
-        void WriteSharedFile(const SharedList &list) {
+        void WriteFile(const ClassList &shared, const ClassList &other) {
 
             YAML::Emitter writer;
             write_help(writer);
@@ -229,8 +232,8 @@ namespace memsafe {
             }
 
 
-            if (fs::exists(fs::path(m_shared_file))) {
-                YAML::Node old = YAML::LoadFile(m_shared_file);
+            if (fs::exists(fs::path(m_file_name))) {
+                YAML::Node old = YAML::LoadFile(m_file_name);
 
                 for (auto it = old.begin(); it != old.end(); it++) {
 
@@ -245,9 +248,9 @@ namespace memsafe {
 
                 }
 
-                fs::path old_name(m_shared_file);
+                fs::path old_name(m_file_name);
                 old_name += ".bak";
-                fs::rename(fs::path(m_shared_file), old_name);
+                fs::rename(fs::path(m_file_name), old_name);
             }
 
             {
@@ -256,14 +259,24 @@ namespace memsafe {
 
                 writer << YAML::BeginMap;
                 {
-                    writer << YAML::Key << "modified";
+                    writer << YAML::Key << TAG_NAME_MODIFIED;
                     writer << YAML::Value << input_modified;
 
-                    writer << YAML::Key << "classes";
+                    writer << YAML::Key << MEMSAFE_KEYWORD_SHARED_TYPE;
                     writer << YAML::Value;
 
                     writer << YAML::BeginMap;
-                    for (auto &elem : list) {
+                    for (auto &elem : shared) {
+                        writer << YAML::Key << elem.first;
+                        writer << YAML::Value << elem.second;
+                    }
+                    writer << YAML::EndMap;
+
+                    writer << YAML::Key << MEMSAFE_KEYWORD_OTHER_CLASS;
+                    writer << YAML::Value;
+
+                    writer << YAML::BeginMap;
+                    for (auto &elem : other) {
                         writer << YAML::Key << elem.first;
                         writer << YAML::Value << elem.second;
                     }
@@ -274,9 +287,9 @@ namespace memsafe {
             writer << YAML::EndMap;
             writer << YAML::Newline;
 
-            std::ofstream shared(m_shared_file);
-            shared << writer.c_str();
-            shared.close();
+            std::ofstream file(m_file_name);
+            file << writer.c_str();
+            file.close();
         }
 
     protected:
