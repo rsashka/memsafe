@@ -16,9 +16,9 @@
 
 #include "memsafe.h"
 
-namespace fs = std::filesystem;
-
 namespace memsafe {
+
+    namespace fs = std::filesystem;
 
     // Copy-Past form https://github.com/google/googletest
 
@@ -183,15 +183,59 @@ namespace memsafe {
     }
 
     /*
+     * 1. Ссылочным класс становится за счет наличия поля с сильной ссылкой (в самом классе, родителе или инстанцированном шаблоне).
+     * 2. Обычные ссылки или адрес всегда анализируются как сильная (владеющая) ссылка.
+     * 3. Цикличестки ссылки могут быть двух видов, ссылка на самого себя или перекретная ссылка.
+     * 4. Для проверки цикличесткой ссылки класса на самого себя убедиться в отсуствии класса или его наследников в любом поле полях
+     * 
+     * 
+     * Зависимости между классами в С++ могут быть следующими:
+     * 
+     * - Зависимость по наследованию Depend parent (родительский класс должен иметь определение, поэтому зависимость не может быть циклической)
+     * - Зависимость по данным (типу поля) Depend data (класс может не иметь определения (только предварительно объявлене), 
+     * поэтому такая зависимость может быть циклической).
+     * 
+     * Ссылочный класс, когда два или более экземпляров класса могут иметь общие данные
+     * и могут требовать механизма синхронизации доступа к данным из несклоьких потоков.
+     * 
+     * Отнесение класса к ссылочному типу, может быть трех типов:
+     * - По определению (класс указан в MEMSAFE_SHARED_TYPE)
+     * - Класс имеет в родителях хотя бы один класс ссылочного типа
+     * - Сам класс или любой из его родителей имеет хотя бы одно поле ссылочного типа
+     * 
+     * Циклические ссылки могут быть двух видов:
+     * - Ссылка класса на самого себя, когда сам класс или любой из его родителей имеет поле ссылочного типа на свой собственный или родительский класс.
+     * - Перекрестные ссылки между классами, когда тип поля одного класса имеет зависимость по неследованию с типом поля друого класса, 
+     * который в свою очередь содержит поле, тип которого имеет зависимость по наследованию с первым классом).
+     * 
+     * Разая логика поиска зависимстей для разных типов циклически ссылок.
+     * - Циклические ссылки первого вида (на свой соственный тип) определяются составлением полного списка родитеских классов и 
+     * обычным поиском среди полей ссылочных типов у всех родительских классов.
+     * - Циклические ссылки второго вида (перекрестная зависимость по данным между двумя классами), определяется 
+     * поиском среди ссылочных полей класса, ссылок на любой класс в иерархии наследования проверяемого класса.
+     * 
      * 
      * 
      */
     class MemSafeFile {
     public:
 
-        typedef std::map<std::string, std::string> ClassList;
+        typedef std::map<std::string, std::string> ListType;
+
+        struct ClassRead {
+            std::string comment;
+            ListType parents;
+            ListType fields;
+        };
+        typedef std::map<std::string, ClassRead> ClassReadType;
+
+        static constexpr const char * SHARED_SCAN_FILE_DEFAULT = "shared.memsafe";
 
         static constexpr const char * TAG_NAME_MODIFIED = "modified";
+
+        static constexpr const char * TAG_NAME_CLASSES = "classes";
+        static constexpr const char * TAG_NAME_PARENTS = "parents";
+        static constexpr const char * TAG_NAME_FIELDS = "fields";
 
         std::string m_file_name;
         std::string m_input_file;
@@ -199,24 +243,63 @@ namespace memsafe {
         MemSafeFile(std::string_view file, std::string_view input) : m_file_name(file), m_input_file(input) {
         }
 
-        void ReadFile(ClassList &shared, ClassList &other) {
+        static std::string & to_string(ListType &list, std::string &result) {
+            for (auto elem : list) {
+                result += elem.first;
+                result += ", ";
+            }
+            if (!list.empty()) {
+                result.resize(result.size() - 2);
+            }
+            return result;
+        }
+
+        static std::string to_string(ClassReadType &classes, std::string separator = "\n") {
+            std::string result;
+            for (auto cls : classes) {
+                result += cls.first;
+                result += " {";
+                to_string(cls.second.parents, result);
+                result += "} fields:{";
+                to_string(cls.second.fields, result);
+                result += "}";
+                result += separator;
+            }
+            return result;
+        }
+
+        void ReadFile(ClassReadType &classes) {
             YAML::Node file = YAML::LoadFile(m_file_name);
             for (auto it = file.begin(); it != file.end(); it++) {
-                for (auto cls = it->second.begin(); cls != it->second.end(); cls++) {
-                    if (cls->first.as<std::string>().compare(MEMSAFE_KEYWORD_SHARED_TYPE) == 0) {
-                        for (auto name = cls->second.begin(); name != cls->second.end(); name++) {
-                            shared[name->first.as<std::string>()] = name->second.as<std::string>();
-                        }
-                    } else if (cls->first.as<std::string>().compare(MEMSAFE_KEYWORD_OTHER_CLASS) == 0) {
-                        for (auto name = cls->second.begin(); name != cls->second.end(); name++) {
-                            other[name->first.as<std::string>()] = name->second.as<std::string>();
+                // Load from all translation units except the current
+                if (it->first.as<std::string>().compare(m_input_file)) {
+                    for (auto cls = it->second.begin(); cls != it->second.end(); cls++) {
+                        // Loading classes from the map
+                        if (cls->first.as<std::string>().compare(TAG_NAME_CLASSES) == 0) {
+                            for (auto name = cls->second.begin(); name != cls->second.end(); name++) {
+                                if (classes.find(name->first.as<std::string>()) == classes.end()) {
+                                    classes[name->first.as<std::string>()] = {};
+                                    //@todo Check the structure of classes written in different translation units?
+                                }
+                                for (auto inner = name->second.begin(); inner != name->second.end(); inner++) {
+                                    if (inner->first.as<std::string>().compare(TAG_NAME_PARENTS) == 0) {
+                                        for (auto parent = inner->second.begin(); parent != inner->second.end(); parent++) {
+                                            classes[name->first.as<std::string>()].parents[parent->first.as<std::string>()] = parent->second.as<std::string>();
+                                        }
+                                    } else if (inner->first.as<std::string>().compare(TAG_NAME_FIELDS) == 0) {
+                                        for (auto field = inner->second.begin(); field != inner->second.end(); field++) {
+                                            classes[name->first.as<std::string>()].fields[field->first.as<std::string>()] = field->second.as<std::string>();
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
         }
 
-        void WriteFile(const ClassList &shared, const ClassList &other) {
+        void WriteFile(ClassReadType &classes) {
 
             YAML::Emitter writer;
             write_help(writer);
@@ -262,23 +345,39 @@ namespace memsafe {
                     writer << YAML::Key << TAG_NAME_MODIFIED;
                     writer << YAML::Value << input_modified;
 
-                    writer << YAML::Key << MEMSAFE_KEYWORD_SHARED_TYPE;
+                    writer << YAML::Key << TAG_NAME_CLASSES;
                     writer << YAML::Value;
 
                     writer << YAML::BeginMap;
-                    for (auto &elem : shared) {
-                        writer << YAML::Key << elem.first;
-                        writer << YAML::Value << elem.second;
-                    }
-                    writer << YAML::EndMap;
+                    for (auto &cls : classes) {
+                        writer << YAML::Key << cls.first;
+                        writer << YAML::Value;
 
-                    writer << YAML::Key << MEMSAFE_KEYWORD_OTHER_CLASS;
-                    writer << YAML::Value;
+                        writer << YAML::Comment(cls.second.comment);
 
-                    writer << YAML::BeginMap;
-                    for (auto &elem : other) {
-                        writer << YAML::Key << elem.first;
-                        writer << YAML::Value << elem.second;
+                        writer << YAML::BeginMap;
+                        writer << YAML::Key << TAG_NAME_PARENTS;
+                        writer << YAML::Value;
+                        {
+                            writer << YAML::BeginMap;
+                            for (auto &elem : cls.second.parents) {
+                                writer << YAML::Key << elem.first;
+                                writer << YAML::Value << elem.second;
+                            }
+                            writer << YAML::EndMap;
+                        }
+                        writer << YAML::Key << TAG_NAME_FIELDS;
+                        writer << YAML::Value;
+                        {
+                            writer << YAML::BeginMap;
+                            for (auto &elem : cls.second.fields) {
+                                writer << YAML::Key << elem.first;
+                                writer << YAML::Value << elem.second;
+                            }
+                            writer << YAML::EndMap;
+                        }
+                        writer << YAML::EndMap;
+
                     }
                     writer << YAML::EndMap;
                 }
