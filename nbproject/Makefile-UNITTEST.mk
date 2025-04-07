@@ -35,6 +35,8 @@ OBJECTDIR=${CND_BUILDDIR}/${CND_CONF}/${CND_PLATFORM}
 
 # Object Files
 OBJECTFILES= \
+	${OBJECTDIR}/_cycles.o \
+	${OBJECTDIR}/_example.o \
 	${OBJECTDIR}/memsafe_test.o
 
 
@@ -56,20 +58,33 @@ LDLIBSOPTIONS=-lpthread -lgtest -lgtest_main -lyaml-cpp
 
 # Build Targets
 .build-conf: ${BUILD_SUBPROJECTS}
-	"${MAKE}"  -f nbproject/Makefile-${CND_CONF}.mk ${CND_DISTDIR}/${CND_CONF}/${CND_PLATFORM}/memsafe
+	"${MAKE}"  -f nbproject/Makefile-${CND_CONF}.mk memsafe_unittest
 
-${CND_DISTDIR}/${CND_CONF}/${CND_PLATFORM}/memsafe: ${OBJECTFILES}
-	${MKDIR} -p ${CND_DISTDIR}/${CND_CONF}/${CND_PLATFORM}
-	${LINK.cc} -o ${CND_DISTDIR}/${CND_CONF}/${CND_PLATFORM}/memsafe ${OBJECTFILES} ${LDLIBSOPTIONS}
+memsafe_unittest: ${OBJECTFILES}
+	${LINK.cc} -o memsafe_unittest ${OBJECTFILES} ${LDLIBSOPTIONS}
+
+${OBJECTDIR}/_cycles.o: _cycles.cpp memsafe_clang.so circleref.memsafe nbproject/Makefile-${CND_CONF}.mk
+	${MKDIR} -p ${OBJECTDIR}
+	${RM} "$@.d"
+	$(COMPILE.cc) -g -DBUILD_UNITTEST -I. -std=c++20 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -Xclang -plugin-arg-memsafe -Xclang log -Xclang -plugin-arg-memsafe -Xclang level=warning -Xclang -plugin-arg-memsafe -Xclang circleref-read -MMD -MP -MF "$@.d" -o ${OBJECTDIR}/_cycles.o _cycles.cpp
+
+${OBJECTDIR}/_example.o: _example.cpp memsafe_clang.so nbproject/Makefile-${CND_CONF}.mk
+	${MKDIR} -p ${OBJECTDIR}
+	${RM} "$@.d"
+	$(COMPILE.cc) -g -DBUILD_UNITTEST -I. -std=c++20 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -Xclang -plugin-arg-memsafe -Xclang log -Xclang -plugin-arg-memsafe -Xclang level=warning -Xclang -plugin-arg-memsafe -Xclang circleref-disable -MMD -MP -MF "$@.d" -o ${OBJECTDIR}/_example.o _example.cpp
+
+circleref.memsafe: circleref.memsafe memsafe_clang.so _example.cpp nbproject/Makefile-${CND_CONF}.mk
+	@echo "\033[1;46;34m"Building circleref.memsafe"\033[0m"
+	clang-20 -std=c++20 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -Xclang -plugin-arg-memsafe -Xclang level=warning -Xclang -plugin-arg-memsafe -Xclang circleref-write -fsyntax-only _example.cpp
+
+memsafe_clang.so: memsafe_clang.cpp memsafe_plugin.h nbproject/Makefile-${CND_CONF}.mk
+	@echo "\033[1;46;34m"Building a plugin memsafe_clang.so"\033[0m"
+	clang-20 -fPIC -shared -o memsafe_clang.so memsafe_clang.cpp `llvm-config-20 --cppflags --ldflags --system-libs --libs all` -std=c++20  -lyaml-cpp
 
 ${OBJECTDIR}/memsafe_test.o: memsafe_test.cpp memsafe_clang.so nbproject/Makefile-${CND_CONF}.mk
 	${MKDIR} -p ${OBJECTDIR}
 	${RM} "$@.d"
 	$(COMPILE.cc) -g -DBUILD_UNITTEST -I. -MMD -MP -MF "$@.d" -o ${OBJECTDIR}/memsafe_test.o memsafe_test.cpp
-
-shared.memsafe: shared.memsafe memsafe_clang.so _example.cpp _cycles.cpp nbproject/Makefile-${CND_CONF}.mk
-	@echo "\033[1;46;34m"Building shared.memsafe"\033[0m"
-	clang-20 -std=c++20 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -Xclang -plugin-arg-memsafe -Xclang level=warning -Xclang -plugin-arg-memsafe -Xclang shared-write -fsyntax-only _example.cpp
 
 # Subprojects
 .build-subprojects:
@@ -77,7 +92,8 @@ shared.memsafe: shared.memsafe memsafe_clang.so _example.cpp _cycles.cpp nbproje
 # Clean Targets
 .clean-conf: ${CLEAN_SUBPROJECTS}
 	${RM} -r ${CND_BUILDDIR}/${CND_CONF}
-	${RM} shared.memsafe
+	${RM} circleref.memsafe
+	${RM} memsafe_clang.so
 
 # Subprojects
 .clean-subprojects:

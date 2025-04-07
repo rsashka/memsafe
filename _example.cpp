@@ -5,7 +5,7 @@
 using namespace memsafe;
 
 namespace ns {
-    
+
     MEMSAFE_BASELINE(100);
 
     void * invalidate_test(int arg) {
@@ -70,8 +70,8 @@ namespace ns {
 
     MEMSAFE_BASELINE(3000);
     static memsafe::Value<int> var_static(1);
-    static auto static_fail1(var_static.take()); // Error
-    static auto static_fail2 = var_static.take(); // Error
+    static auto static_fail1(var_static.lock()); // Error
+    static auto static_fail2 = var_static.lock(); // Error
 
     MEMSAFE_BASELINE(4000);
 
@@ -129,14 +129,14 @@ namespace ns {
             return arg; // Error
         }
 
-        MEMSAFE_BASELINE(4700);
+        MEMSAFE_BASELINE(4800);
         int temp = 3;
         temp = 4;
         var_value = 5;
         *var_value += 6;
 
 
-        MEMSAFE_BASELINE(4800);
+        MEMSAFE_BASELINE(4900);
         return 777;
     }
 
@@ -171,6 +171,14 @@ namespace ns {
     }
 
 
+    MEMSAFE_BASELINE(10_000);
+
+    struct Ext;
+
+    struct A {
+        Shared<Ext> ext;
+    };
+
     void bugfix_11() { // https://github.com/rsashka/memsafe/issues/11
         MEMSAFE_BASELINE(900_011_000);
         std::vector vect(100000, 0);
@@ -178,7 +186,7 @@ namespace ns {
         vect = {};
         std::sort(x, vect.end()); // Error
     }
-    
+
     void bugfix_12() { // https://github.com/rsashka/memsafe/issues/12
         MEMSAFE_BASELINE(900_012_000);
         std::vector vect(100000, 0);

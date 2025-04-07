@@ -59,6 +59,7 @@ namespace {
 
     class MemSafePlugin;
     static std::unique_ptr<MemSafePlugin> plugin;
+    static std::unique_ptr<MemSafeFile> scaner;
 
     /**
      * @def MemSafeLogger
@@ -94,8 +95,8 @@ namespace {
             }
         }
 
-        inline std::string LocToStr(const SourceLocation &loc) {
-            std::string str = loc.printToString(m_ci.getSourceManager());
+        static std::string LocToStr(const SourceLocation &loc, const SourceManager &sm) {
+            std::string str = loc.printToString(sm);
             size_t pos = str.find(' ');
             if (pos == std::string::npos) {
                 return str;
@@ -103,11 +104,19 @@ namespace {
             return str.substr(0, pos);
         }
 
+        inline std::string LocToStr(const SourceLocation &loc) {
+            return LocToStr(loc, m_ci.getSourceManager());
+        }
+
         void Dump(raw_ostream & out) {
-//                        for (auto &elem : m_logs) {
-//                            out << "    \"" << elem.second.substr(0, elem.second.find(" ", 7)) << "\",\n";
-//                        }
-//                        out << "\n";
+            
+            // For simple copy-paste into unit tests
+            
+            for (auto &elem : m_logs) {
+                out << "    \"" << elem.second.substr(0, elem.second.find(" ", 7)) << "\",\n";
+            }
+            out << "\n";
+            
 
             out << MEMSAFE_KEYWORD_START_LOG;
             for (auto &elem : m_logs) {
@@ -572,6 +581,14 @@ namespace {
         ERR = 3,
     };
 
+    enum ClassType : uint8_t {
+        UNKNOWN = 0,
+        AUTO = 1,
+        WEAK = 2,
+        SHARED = 3,
+        NOT_SHARED = 4,
+    };
+
     class MemSafePlugin : public RecursiveASTVisitor<MemSafePlugin> {
     public:
         static inline const char * ERROR_TYPE = MEMSAFE_KEYWORD_ERROR "-type";
@@ -609,12 +626,20 @@ namespace {
         std::set<std::string> m_listStatus{STATUS_ENABLE, STATUS_DISABLE, STATUS_PUSH, STATUS_POP};
         std::set<std::string> m_listLevel{ERROR, WARNING, NOTE, REMARK, IGNORED};
 
+
+        typedef std::map<std::string, std::pair<const CXXRecordDecl *, SourceLocation>> ClassListType;
+        typedef std::variant<const CXXRecordDecl *, std::string> LocationType;
+
+        bool m_is_cyclic_analysis;
+        MemSafeFile::ClassReadType m_classes;
+        ClassListType m_not_shared_class;
+
         /**
          * List of base classes that contain strong pointers to data 
          * (copying a variable does not copy the data,  only the reference 
          * and increments the ownership counter).
          */
-        std::set<std::string> m_shared_type;
+        std::map<std::string, LocationType> m_shared_type;
         /**
          * List of base classes that contain strong pointers to data 
          * that can only be created in temporary variables 
@@ -647,8 +672,6 @@ namespace {
         SourceLocation m_dump_location;
         SourceLocation m_trace_location;
 
-        typedef std::map<std::string, SourceLocation> CycleItemList;
-
         const CompilerInstance &m_CI;
 
         MemSafePlugin(const CompilerInstance &instance) :
@@ -658,6 +681,7 @@ namespace {
 
             m_diagnostic_level = clang::DiagnosticsEngine::Level::Error;
 
+            m_is_cyclic_analysis = true;
         }
 
         inline clang::DiagnosticsEngine &getDiag() {
@@ -675,6 +699,7 @@ namespace {
             out << "warning-type: " << makeHelperString(m_warning_type) << "\n";
             out << MEMSAFE_KEYWORD_AUTO_TYPE ": " << makeHelperString(m_auto_type) << "\n";
             out << MEMSAFE_KEYWORD_SHARED_TYPE ": " << makeHelperString(m_shared_type) << "\n";
+            out << "not-shared-classes: " << makeHelperString(m_not_shared_class) << "\n";
             out << MEMSAFE_KEYWORD_INVALIDATE_FUNC ": " << makeHelperString(m_invalidate_func) << "\n";
             out << "\n";
         }
@@ -684,7 +709,7 @@ namespace {
             if (loc.isValid()) {
                 return clang::DiagnosticsEngine::Level::Ignored;
             }
-            if (!isEnabled()) {
+            if (!isEnabledStatus()) {
                 return clang::DiagnosticsEngine::Level::Ignored;
             } else if (original > m_diagnostic_level) {
                 return m_diagnostic_level;
@@ -706,11 +731,6 @@ namespace {
             }
             return "0";
         }
-
-        //        std::string LogMessage(SourceLocation loc, std::string str, SourceLocation hash = SourceLocation(), LogLevel level = LogLevel::INFO) {
-        //            }
-        //
-        //        }
 
         void LogOnly(SourceLocation loc, std::string str, SourceLocation hash = SourceLocation(), LogLevel level = LogLevel::INFO) {
             if (logger) {
@@ -742,6 +762,20 @@ namespace {
                     getLevel(clang::DiagnosticsEngine::Error), "%0"))
                     .AddString(str);
             LogOnly(loc, str, hash, LogLevel::ERR);
+        }
+
+        template <typename T>
+        static std::string makeHelperString(const T &map) {
+            std::string result;
+            for (auto elem : map) {
+                if (!result.empty()) {
+                    result += "', '";
+                }
+                result += elem.first;
+            }
+            result.insert(0, "'");
+            result += "'";
+            return result;
         }
 
         static std::string makeHelperString(const std::set<std::string> &set) {
@@ -786,7 +820,7 @@ namespace {
             return result;
         }
 
-        std::string processArgs(std::string_view first, std::string_view second) {
+        std::string processArgs(std::string_view first, std::string_view second, SourceLocation loc) {
 
             std::string result;
             if (first.empty() || second.empty()) {
@@ -844,7 +878,7 @@ namespace {
                 } else if (first.compare(WARNING_TYPE) == 0) {
                     m_warning_type.emplace(second.begin());
                 } else if (first.compare(SHARED_TYPE) == 0) {
-                    m_shared_type.emplace(second.begin());
+                    m_shared_type.emplace(second.begin(), MemSafeLogger::LocToStr(loc, m_CI.getSourceManager()));
                 } else if (first.compare(AUTO_TYPE) == 0) {
                     m_auto_type.emplace(second.begin());
                 } else if (first.compare(INVALIDATE_FUNC) == 0) {
@@ -854,11 +888,104 @@ namespace {
             return result;
         }
 
-        std::set<const CXXRecordDecl *> MakeParentsList(const CXXRecordDecl &decl) {
+        /**
+         * Find class type by name
+         */
 
-            std::set<const CXXRecordDecl *> result({&decl});
+        const char * findClassType(std::string_view type, bool local_only = false) {
+
+            if (m_auto_type.find(type.begin()) != m_auto_type.end()) {
+                return AUTO_TYPE;
+            }
+            std::map<std::string, LocationType>::iterator found;
+            found = m_shared_type.find(type.begin());
+            if (found != m_shared_type.end()) {
+                return (!local_only || std::holds_alternative<const CXXRecordDecl *>(found->second)) ? SHARED_TYPE : nullptr;
+            }
+            return nullptr;
+        }
+
+        std::string LocationTypeToString(LocationType & loc) {
+            if (std::holds_alternative<std::string>(loc)) {
+                return std::get<std::string>(loc);
+            }
+            assert(std::holds_alternative<const CXXRecordDecl *>(loc));
+            return MemSafeLogger::LocToStr(std::get<const CXXRecordDecl *>(loc)->getLocation(), m_CI.getSourceManager());
+        }
+
+        void setCyclicAnalysis(bool status) {
+            m_is_cyclic_analysis = status;
+        }
+
+        /* 
+         * A reference class is a class that has at least one field, 
+         * or at least one field of any parent class, 
+         * or the parent class itself has a reference type 
+         * (i.e. the shared-type list contains the name of the class or one of its parents)
+         * or has a pointer (reference) to a structured data type.
+         * 
+         * All parent classes must have a definition in the current translation unit 
+         * (a forward definition is not sufficient, or a compile-time error will occur).
+         * 
+         * This means that the definitions of all its parent classes and 
+         * the types of fields must be available when the class is defined. 
+         * However, fields with reference types may have a forward type declaration 
+         * (i.e. not have a definition in the current translation unit).
+         * 
+         * class Pred;
+         * class Class {
+         *      std::shared_ptr<Pred> pred; // This reference type and definition of class Pred is not required
+         * };
+         * 
+         * Therefore, to check whether a struct is a reference class 
+         * (whether the class contains reference data types), 
+         * the definition of reference data types in the class fields is not required.
+         */
+
+        bool testSharedType(const CXXRecordDecl &decl, ClassListType &list) {
+
+            bool is_shared = false;
+            auto found_shared = m_shared_type.find(decl.getQualifiedNameAsString());
+            if (found_shared != m_shared_type.end()) {
+
+                LogOnly(decl.getLocation(), std::format("Detected shared type '{}' registered at {}",
+                        decl.getQualifiedNameAsString(), LocationTypeToString(found_shared->second)));
+
+                is_shared = true;
+
+            } else {
+
+                for (auto elem : list) {
+                    if (m_shared_type.find(elem.first) != m_shared_type.end()) {
+
+                        is_shared = true;
+
+                        // At least one parent or field type of the class is a reference class, 
+                        // which means that the class itself is also a reference class.
+                        m_shared_type[decl.getQualifiedNameAsString()] = &decl;
+                        LogOnly(decl.getLocation(), std::format("Add shared type '{}'", decl.getQualifiedNameAsString()));
+                        break;
+                    }
+                }
+            }
+            return is_shared;
+        }
+
+        /** 
+         * Make the list of used classes by recursively traversing parent classes and all their field types.
+         */
+        void MakeUsedClasses(const CXXRecordDecl &decl, ClassListType &used, ClassListType &fields) {
+            if (used.find(decl.getQualifiedNameAsString()) != used.end()) {
+                return;
+            }
 
             if (const ClassTemplateSpecializationDecl * Special = dyn_cast<const ClassTemplateSpecializationDecl> (&decl)) {
+
+                if (m_shared_type.find(Special->getQualifiedNameAsString()) != m_shared_type.end()) {
+                    m_shared_type[decl.getQualifiedNameAsString()] = &decl;
+                } else {
+                    MakeUsedClasses(*Special->getSpecializedTemplate()->getTemplatedDecl(), used, fields);
+                }
 
                 const TemplateArgumentList& ArgsList = Special->getTemplateArgs();
                 const TemplateParameterList* TemplateList = Special->getSpecializedTemplate()->getTemplateParameters();
@@ -867,71 +994,295 @@ namespace {
                 for (auto TemplateToken = TemplateList->begin(); TemplateToken != TemplateList->end(); TemplateToken++) {
                     if ((*TemplateToken)->getKind() == Decl::Kind::TemplateTypeParm) {
                         if (const CXXRecordDecl * type = ArgsList[Index].getAsType()->getAsCXXRecordDecl()) {
-                            result.emplace(type);
+                            if (m_shared_type.find(type->getQualifiedNameAsString()) != m_shared_type.end()) {
+                                m_shared_type[decl.getQualifiedNameAsString()] = &decl;
+                            }
+                            used[type->getQualifiedNameAsString()] = {type, Special->getLocation()};
+                            MakeUsedClasses(*type, used, fields);
                         }
                     }
                     Index++;
                 }
             }
 
-            for (auto iter = decl.bases_begin(); iter != decl.bases_end(); iter++) {
-                if (iter->isBaseOfClass()) {
-                    if (const CXXRecordDecl * base = iter->getType()->getAsCXXRecordDecl()) {
-                        result.emplace(base);
+            if (decl.hasDefinition()) {
+
+                for (auto iter = decl.bases_begin(); iter != decl.bases_end(); iter++) {
+
+                    // iter->getType()->dump();
+
+                    if (const ElaboratedType * templ = dyn_cast<const ElaboratedType> (iter->getType())) {
+
+                        if (const TemplateSpecializationType * Special = dyn_cast<const TemplateSpecializationType> (templ->desugar())) {
+                            if (const ClassTemplateDecl * templ_class = dyn_cast<const ClassTemplateDecl> (Special->getTemplateName().getAsTemplateDecl())) {
+                                assert(templ_class->getTemplatedDecl());
+
+                                if (m_shared_type.find(templ_class->getTemplatedDecl()->getQualifiedNameAsString()) != m_shared_type.end()) {
+                                    m_shared_type[decl.getQualifiedNameAsString()] = &decl;
+                                } else {
+                                    //@todo Do you need all the descendants or can you limit the list to the first template class?
+                                    used[templ_class->getTemplatedDecl()->getQualifiedNameAsString()] = {templ_class->getTemplatedDecl(), iter->getBeginLoc()};
+                                    MakeUsedClasses(*templ_class->getTemplatedDecl(), used, fields);
+                                }
+
+                                for (auto elem : Special->template_arguments()) {
+                                    //                                    llvm::outs() << elem.getKind() << "\n";
+                                    if (elem.getKind() == TemplateArgument::ArgKind::Type) {
+                                        if (const CXXRecordDecl * type = elem.getAsType()->getAsCXXRecordDecl()) {
+                                            if (m_shared_type.find(type->getQualifiedNameAsString()) != m_shared_type.end()) {
+                                                m_shared_type[decl.getQualifiedNameAsString()] = &decl;
+                                            } else {
+                                                //@todo Do you need all the descendants or can you limit the list to the first template class?
+                                                used[type->getQualifiedNameAsString()] = {type, iter->getBeginLoc()};
+                                                MakeUsedClasses(*elem.getAsType()->getAsCXXRecordDecl(), used, fields);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else if (const RecordType * rec = dyn_cast<const RecordType> (templ->desugar())) {
+                            if (const CXXRecordDecl * base = rec->desugar()->getAsCXXRecordDecl()) {
+                                if (m_shared_type.find(base->getQualifiedNameAsString()) != m_shared_type.end()) {
+                                    m_shared_type[decl.getQualifiedNameAsString()] = &decl;
+                                }
+                                used[base->getQualifiedNameAsString()] = {base, iter->getBeginLoc()};
+                                MakeUsedClasses(*base, used, fields);
+                            }
+                        }
+
+                    } else if (const ClassTemplateSpecializationDecl * Special = dyn_cast<const ClassTemplateSpecializationDecl> (iter->getType()->getAsCXXRecordDecl())) {
+
+                        if (m_shared_type.find(Special->getQualifiedNameAsString()) != m_shared_type.end()) {
+                            m_shared_type[decl.getQualifiedNameAsString()] = &decl;
+                        } else {
+                            MakeUsedClasses(*Special->getSpecializedTemplate()->getTemplatedDecl(), used, fields);
+                        }
+
+                        const TemplateArgumentList& ArgsList = Special->getTemplateArgs();
+                        const TemplateParameterList* TemplateList = Special->getSpecializedTemplate()->getTemplateParameters();
+
+                        int Index = 0;
+                        for (auto TemplateToken = TemplateList->begin(); TemplateToken != TemplateList->end(); TemplateToken++) {
+                            if ((*TemplateToken)->getKind() == Decl::Kind::TemplateTypeParm) {
+                                if (const CXXRecordDecl * type = ArgsList[Index].getAsType()->getAsCXXRecordDecl()) {
+                                    if (m_shared_type.find(type->getQualifiedNameAsString()) != m_shared_type.end()) {
+                                        m_shared_type[decl.getQualifiedNameAsString()] = &decl;
+                                    }
+                                    used[type->getQualifiedNameAsString()] = {type, iter->getBeginLoc()};
+                                    MakeUsedClasses(*type, used, fields);
+                                }
+                            }
+                            Index++;
+                        }
+
+                    } else if (const CXXRecordDecl * base = iter->getType()->getAsCXXRecordDecl()) {
+
+                        if (m_shared_type.find(base->getQualifiedNameAsString()) != m_shared_type.end()) {
+                            m_shared_type[decl.getQualifiedNameAsString()] = &decl;
+                        }
+                        used[base->getQualifiedNameAsString()] = {base, iter->getBeginLoc()};
+                        MakeUsedClasses(*base, used, fields);
                     }
                 }
-            }
-            return result;
-        }
 
-        bool checkCycles(const CXXRecordDecl &decl, std::set<const CXXRecordDecl *> & list) {
+                for (auto field = decl.field_begin(); field != decl.field_end(); field++) {
 
-            CycleItemList names;
-            for (auto & elem : list) {
-                names.emplace(elem->getQualifiedNameAsString(), elem->getLocation());
-            }
+                    if (field->getCanonicalDecl()->getType()->isPointerOrReferenceType()) {
+
+                        QualType CanonicalType = field->getCanonicalDecl()->getType()->getPointeeType();
+                        //  llvm::outs() << "isPointerOrReferenceType " << CanonicalType.getAsString() << "\n";
+
+                        if (const auto *RT = CanonicalType->getAs<RecordType>()) {
+                            if (const auto *ClassDecl = dyn_cast<CXXRecordDecl>(RT->getDecl())) {
+
+                                // the presence of a field with a reference to a structured type 
+                                // means that the current type is a reference data type
+                                m_shared_type[decl.getQualifiedNameAsString()] = &decl;
 
 
-            bool result = true;
-            for (auto cls : list) {
+                                if (fields.find(ClassDecl->getQualifiedNameAsString()) == fields.end() && fields.find(decl.getQualifiedNameAsString()) == fields.end()) {
 
-                for (auto field = cls->field_begin(); field != cls->field_end(); field++) {
-                    if (const CXXRecordDecl * type = field->getType()->getAsCXXRecordDecl()) {
+                                    fields[ClassDecl->getQualifiedNameAsString()] = {ClassDecl, field->getLocation()};
 
-                        bool is_unsafe = m_scopes.testUnsafe().isValid() || checkDeclUnsafe(*cls) || checkDeclUnsafe(*type) || checkDeclUnsafe(**field);
-                        auto found = names.find(cls->getQualifiedNameAsString());
+                                    LogOnly(field->getLocation(), std::format("Field with reference to structured data type '{}'", ClassDecl->getQualifiedNameAsString()));
 
-                        if (found != names.end()) {
+                                    // Save the type name in the list of used data types 
+                                    // for future analysis of circular references.
+                                    MakeUsedClasses(*ClassDecl, used, fields);
+                                }
 
-                            if (is_unsafe) {
-                                LogWarning(field->getLocation(), std::format("UNSAFE The class '{}' has a circular reference through class '{}'",
-                                        decl.getQualifiedNameAsString(), type->getQualifiedNameAsString()));
-                            } else {
-                                LogError(field->getLocation(), std::format("The class '{}' has a circular reference through class '{}'",
-                                        decl.getQualifiedNameAsString(), type->getQualifiedNameAsString()));
                             }
+                        }
+                    }
 
-                            result = false;
+
+                    const CXXRecordDecl * field_type = field->getType()->getAsCXXRecordDecl();
+                    if (!field_type) {
+                        continue;
+                    }
+
+
+                    if (const ClassTemplateSpecializationDecl * Special = dyn_cast<const ClassTemplateSpecializationDecl> (field_type)) {
+
+                        if (m_shared_type.find(Special->getQualifiedNameAsString()) != m_shared_type.end()) {
+                            m_shared_type[decl.getQualifiedNameAsString()] = &decl;
+                        } else {
+                            if (fields.find(Special->getQualifiedNameAsString()) == fields.end() && fields.find(decl.getQualifiedNameAsString()) == fields.end()) {
+                                MakeUsedClasses(*Special, used, fields);
+                            }
+                        }
+
+                        // std::string diag_name;
+                        // llvm::raw_string_ostream str_out(diag_name);
+                        // Special->getNameForDiagnostic(str_out,m_CI.getASTContext().getPrintingPolicy(), true);
+                        // llvm::outs() << diag_name << "\n";
+
+                        const TemplateArgumentList& ArgsList = Special->getTemplateArgs();
+                        const TemplateParameterList* TemplateList = Special->getSpecializedTemplate()->getTemplateParameters();
+
+                        int Index = 0;
+                        for (auto TemplateToken = TemplateList->begin(); TemplateToken != TemplateList->end(); TemplateToken++) {
+                            if ((*TemplateToken)->getKind() == Decl::Kind::TemplateTypeParm) {
+                                if (const CXXRecordDecl * type = ArgsList[Index].getAsType()->getAsCXXRecordDecl()) {
+                                    if (fields.find(type->getQualifiedNameAsString()) == fields.end() && fields.find(decl.getQualifiedNameAsString()) == fields.end()) {
+                                        if (m_shared_type.find(type->getQualifiedNameAsString()) != m_shared_type.end()) {
+                                            m_shared_type[decl.getQualifiedNameAsString()] = &decl;
+                                        }
+                                        fields[type->getQualifiedNameAsString()] = {type, field->getLocation()};
+                                        MakeUsedClasses(*type, used, fields);
+                                    }
+                                }
+                            }
+                            Index++;
+                        }
+
+                    } else {
+                        if (fields.find(field_type->getQualifiedNameAsString()) == fields.end() && fields.find(decl.getQualifiedNameAsString()) == fields.end()) {
+                            if (m_shared_type.find(field_type->getQualifiedNameAsString()) != m_shared_type.end()) {
+                                m_shared_type[decl.getQualifiedNameAsString()] = &decl;
+                            }
+                            fields[field_type->getQualifiedNameAsString()] = {field_type, field->getLocation()};
+                            MakeUsedClasses(*field_type, used, fields);
                         }
                     }
                 }
             }
-            return result;
+        }
+
+        void reduceSharedList(ClassListType & list, bool test_external = true) {
+            auto iter = list.begin();
+            while (iter != list.end()) {
+                if (iter->second.first->hasDefinition()) {
+
+                    auto found_shared = m_shared_type.find(iter->first);
+                    if (found_shared == m_shared_type.end()) {
+                        iter = list.erase(iter);
+                    } else {
+                        iter++;
+                    }
+
+                } else if (test_external) {
+
+                    auto found = m_classes.find(iter->first);
+                    if (found == m_classes.end()) {
+
+                        std::string message = std::format(""
+                                "Class definition '{}' not found.\n"
+                                "The circular reference analyzer requires two passes.\n"
+                                "First run the plugin with key '--circleref-write -fsyntax-only' to generate the class list,\n"
+                                "then run a second time with the '--circleref-read' key to re-analyze,\n"
+                                "or disable the circular reference analyzer with the 'circleref-disable' option.\n", iter->first);
+
+                        LogOnly(iter->second.second, message);
+
+                        getDiag().Report(iter->second.second,
+                                getDiag().getCustomDiagID(clang::DiagnosticsEngine::Error, "%0"))
+                                .AddString(message);
+
+                        throw std::runtime_error(message);
+
+                    } else {
+                        if (found->second.parents.empty() && found->second.fields.empty()) {
+                            LogOnly(iter->second.second, std::format("Non shared class definition '{}' used from another translation unit.", iter->first));
+                            iter = list.erase(iter);
+                        } else {
+                            LogOnly(iter->second.second, std::format("Shared class definition '{}' used from another translation unit.", iter->first));
+                            iter++;
+                        }
+                    }
+                } else {
+                    iter++;
+                }
+            }
         }
 
         /**
-         * Check if class name is in the list of monitored classes
+         * A class with cyclic relationships that has a field of reference type to its own type,
+         * or its field has a reference type to another class that has a field of reference type
+         * to the class being checked, either directly or through reference fields of other classes.
          */
+        bool checkCycles(const CXXRecordDecl &decl, ClassListType & used, ClassListType & fields) {
 
-        const char * checkClassName(std::string_view type) {
-            if (m_auto_type.find(type.begin()) != m_auto_type.end()) {
-                return AUTO_TYPE;
-            } else if (m_shared_type.find(type.begin()) != m_shared_type.end()) {
-                return SHARED_TYPE;
-                //            } else if (m_pointer_type.find(type.begin()) != m_pointer_type.end()) {
-                //                return POINTER_TYPE;
+            // Remove all not shared classes
+            reduceSharedList(fields);
+
+            used[decl.getQualifiedNameAsString()] = {&decl, decl.getLocation()};
+
+            for (auto parent : used) {
+                auto field_found = fields.find(parent.first);
+                if (field_found != fields.end()) {
+                    LogError(field_found->second.second, std::format("Class {} has a reference to itself through the field type {}",
+                            decl.getQualifiedNameAsString(), field_found->first));
+                    return false;
+                }
             }
-            return nullptr;
+
+            ClassListType other;
+            ClassListType other_fields;
+            for (auto elem : fields) {
+
+                assert(elem.second.first);
+
+                other.clear();
+                other_fields.clear();
+
+                MakeUsedClasses(*elem.second.first, other, other_fields);
+
+                reduceSharedList(other_fields);
+
+                auto other_found = other_fields.find(elem.first);
+                if (other_found != other_fields.end()) {
+                    bool is_unsafe = m_scopes.testUnsafe().isValid() || checkDeclUnsafe(decl) || checkDeclUnsafe(*elem.second.first) || checkDeclUnsafe(*other_found->second.first);
+
+                    if (is_unsafe) {
+                        LogWarning(other_found->second.second, std::format("UNSAFE The class '{}' has a circular reference through class '{}'",
+                                decl.getQualifiedNameAsString(), other_found->first));
+                    } else {
+                        // Class {} has a cross reference through a field with type вввввв
+                        LogError(other_found->second.second, std::format("The class '{}' has a circular reference through class '{}'",
+                                decl.getQualifiedNameAsString(), other_found->first));
+                    }
+                    return false;
+                }
+
+                for (auto elem_other : other_fields) {
+                    if (used.count(elem_other.first)) {
+
+                        bool is_unsafe = m_scopes.testUnsafe().isValid() || checkDeclUnsafe(decl) || checkDeclUnsafe(*elem.second.first) || checkDeclUnsafe(*elem_other.second.first);
+
+                        if (is_unsafe) {
+                            LogWarning(elem_other.second.second, std::format("UNSAFE The class '{}' has a circular reference through class '{}'",
+                                    elem.first, decl.getQualifiedNameAsString()));
+                        } else {
+                            LogError(elem_other.second.second, std::format("The class '{}' has a circular reference through class '{}'",
+                                    elem.first, decl.getQualifiedNameAsString()));
+                        }
+                        return false;
+                    }
+                }
+            }
+
+            return true;
         }
 
         inline bool isEnabledStatus() {
@@ -944,7 +1295,7 @@ namespace {
          * 
          */
         inline bool isEnabled() {
-            return isEnabledStatus();
+            return isEnabledStatus() && !scaner;
         }
 
         SourceLocation checkUnsafeBlock(const AttributedStmt * attrStmt) {
@@ -1020,7 +1371,7 @@ namespace {
 
             if (attr_args != pair_empty) {
 
-                std::string error_str = processArgs(attr_args.first, attr_args.second);
+                std::string error_str = processArgs(attr_args.first, attr_args.second, decl->getLocation());
 
                 if (!error_str.empty()) {
 
@@ -1031,22 +1382,25 @@ namespace {
                     LogError(attr->getLocation(), error_str);
 
                 } else if (attr_args.first.compare(BASELINE) == 0) {
-                    try {
-                        SourceLocation loc = decl->getLocation();
-                        if (loc.isMacroID()) {
-                            loc = m_CI.getSourceManager().getExpansionLoc(loc);
-                        }
-                        line_base = getDiag().getSourceManager().getSpellingLineNumber(loc);
-                        line_number = std::stoi(SeparatorRemove(attr_args.second));
 
-                        //                        if (logger) {
-                        //                            clang::DiagnosticBuilder DB = getDiag().Report(loc, getDiag().getCustomDiagID(
-                        //                                    DiagnosticsEngine::Note, "Mark baseline %0"));
-                        //                            DB.AddString(std::to_string(line_number));
-                        //                        }
+                    SourceLocation loc = decl->getLocation();
+                    if (loc.isMacroID()) {
+                        loc = m_CI.getSourceManager().getExpansionLoc(loc);
+                    }
+
+                    try {
+                        int old_line_number = line_number;
+                        line_number = std::stoi(SeparatorRemove(attr_args.second));
+                        line_base = getDiag().getSourceManager().getSpellingLineNumber(loc);
+
+                        if (old_line_number >= line_number) {
+                            LogOnly(loc, "Error in base sequential numbering");
+                            getDiag().Report(loc, getDiag().getCustomDiagID(DiagnosticsEngine::Error, "Error in base sequential numbering"));
+                        }
 
                     } catch (...) {
-                        getDiag().Report(decl->getLocation(), getDiag().getCustomDiagID(
+                        LogOnly(loc, "The second argument is expected to be a line number as a literal string!");
+                        getDiag().Report(loc, getDiag().getCustomDiagID(
                                 DiagnosticsEngine::Error,
                                 "The second argument is expected to be a line number as a literal string!"));
                     }
@@ -1125,7 +1479,7 @@ namespace {
         }
 
         void printDumpIfEnabled(const Decl * decl) {
-            if (!decl || !isEnabled() || m_dump_matcher.isEmpty() || skipLocation(m_dump_location, decl->getLocation())) {
+            if (!decl || !isEnabledStatus() || m_dump_matcher.isEmpty() || skipLocation(m_dump_location, decl->getLocation())) {
                 return;
             }
 
@@ -1164,7 +1518,7 @@ namespace {
         }
 
         void printDumpIfEnabled(const Stmt * stmt) {
-            if (!stmt || !isEnabled() || m_dump_matcher.isEmpty() || skipLocation(m_dump_location, stmt->getBeginLoc())) {
+            if (!stmt || !isEnabledStatus() || m_dump_matcher.isEmpty() || skipLocation(m_dump_location, stmt->getBeginLoc())) {
                 return;
             }
 
@@ -1207,7 +1561,7 @@ namespace {
          */
 
         const char * checkClassNameTracking(const CXXRecordDecl * type) {
-            const char * result = type ? checkClassName(type->getQualifiedNameAsString()) : nullptr;
+            const char * result = type ? findClassType(type->getQualifiedNameAsString()) : nullptr;
             const CXXRecordDecl * cxx = dyn_cast_or_null<CXXRecordDecl>(type);
             if (cxx) {
                 for (auto iter = cxx->bases_begin(); !result && iter != cxx->bases_end(); iter++) {
@@ -1259,6 +1613,48 @@ namespace {
 
             return nullptr;
 
+        }
+
+        std::string getArgName(const Expr * arg) {
+            const DeclRefExpr * dre = nullptr;
+            if (const Expr * init = removeTempExpr(arg)) {
+                dre = dyn_cast<DeclRefExpr>(init->IgnoreUnlessSpelledInSource()->IgnoreImplicit());
+            }
+            if (dre && dre->getDecl()) {
+                return dre->getDecl()->getNameAsString();
+            }
+            return "";
+        }
+
+        void checkTypeName(const SourceLocation &loc, std::string_view name, bool unsafe) {
+            if (m_error_type.find(name.begin()) != m_error_type.end()) {
+                if (unsafe) {
+                    LogWarning(loc, std::format("UNSAFE Error type found '{}'", name));
+                } else {
+                    LogError(loc, std::format("Error type found '{}'", name));
+                }
+            } else if (m_warning_type.find(name.begin()) != m_warning_type.end()) {
+                if (unsafe) {
+                    LogWarning(loc, std::format("UNSAFE Warning type found '{}'", name));
+                } else {
+                    LogWarning(loc, std::format("Warning type found '{}'", name));
+                }
+            }
+        }
+
+        bool checkArg(const Expr * arg, std::string &name, const char * &type, int &level) {
+            name = getArgName(arg);
+            if (name.empty()) {
+                LogOnly(arg->getBeginLoc(), "Argument is not a variable");
+                return false;
+            }
+
+            type = m_scopes.findVariable(name, level);
+            if (type == nullptr) {
+                LogError(arg->getBeginLoc(), "Variable name not found!");
+                return false;
+            }
+            return true;
         }
 
         /*
@@ -1352,186 +1748,153 @@ namespace {
             return true;
         }
 
-        std::string getArgName(const Expr * arg) {
-            const DeclRefExpr * dre = nullptr;
-            if (const Expr * init = removeTempExpr(arg)) {
-                dre = dyn_cast<DeclRefExpr>(init->IgnoreUnlessSpelledInSource()->IgnoreImplicit());
-            }
-            if (dre && dre->getDecl()) {
-                return dre->getDecl()->getNameAsString();
-            }
-            return "";
-        }
-
-        void checkTypeName(const SourceLocation &loc, std::string_view name, bool unsafe) {
-            if (m_error_type.find(name.begin()) != m_error_type.end()) {
-                if (unsafe) {
-                    LogWarning(loc, std::format("UNSAFE Error type found '{}'", name));
-                } else {
-                    LogError(loc, std::format("Error type found '{}'", name));
-                }
-            } else if (m_warning_type.find(name.begin()) != m_warning_type.end()) {
-                if (unsafe) {
-                    LogWarning(loc, std::format("UNSAFE Warning type found '{}'", name));
-                } else {
-                    LogWarning(loc, std::format("Warning type found '{}'", name));
-                }
-            }
-        }
-
-        bool checkArg(const Expr * arg, std::string &name, const char * &type, int &level) {
-            name = getArgName(arg);
-            if (name.empty()) {
-                LogOnly(arg->getBeginLoc(), "Argument is not a variable");
-                return false;
-            }
-
-            type = m_scopes.findVariable(name, level);
-            if (type == nullptr) {
-                LogError(arg->getBeginLoc(), "Variable name not found!");
-                return false;
-            }
-            return true;
-        }
-
-        bool VisitCallExpr(const CallExpr * call) {
-            if (isEnabled() && call->getNumArgs() == 2) {
-
-                if (call->getDirectCallee()-> getQualifiedNameAsString().compare("std::swap") != 0) {
-                    // check only swap funstion or method
-                    return true;
-                }
-
-                std::string lval;
-                const char * lval_type;
-                int lval_level;
-
-                std::string rval;
-                const char * rval_type;
-                int rval_level;
-
-                if (checkArg(call->getArg(0), lval, lval_type, lval_level) && checkArg(call->getArg(1), rval, rval_type, rval_level)) {
-                    if (std::string_view(SHARED_TYPE).compare(lval_type) == 0 && std::string_view(SHARED_TYPE).compare(rval_type) == 0) {
-                        if (lval_level == rval_level) {
-                            LogOnly(call->getBeginLoc(), "Swap shared variables with the same lifetime");
-                        } else {
-                            if (m_scopes.testUnsafe().isValid()) {
-                                LogWarning(call->getBeginLoc(), "UNSAFE swap the shared variables with different lifetimes");
-                            } else {
-                                LogError(call->getBeginLoc(), "Error swap the shared variables with different lifetimes");
-                            }
-                        }
-                    }
-                }
-            }
-            return true;
-        }
-
-        bool VisitCXXOperatorCallExpr(const CXXOperatorCallExpr * op) {
-            if (isEnabled() && op->isAssignmentOp()) {
-
-                assert(op->getNumArgs() == 2);
-
-                std::string lval;
-                const char * lval_type;
-                int lval_level;
-
-                std::string rval;
-                const char * rval_type;
-                int rval_level;
-
-                if (checkArg(op->getArg(0), lval, lval_type, lval_level) && checkArg(op->getArg(1), rval, rval_type, rval_level)) {
-                    if (std::string_view(SHARED_TYPE).compare(lval_type) == 0 && std::string_view(SHARED_TYPE).compare(rval_type) == 0) {
-                        if (lval_level > rval_level) {
-                            LogOnly(op->getBeginLoc(), "Copy of shared variable with shorter lifetime");
-                        } else {
-                            if (m_scopes.testUnsafe().isValid()) {
-                                LogWarning(op->getBeginLoc(), "UNSAFE copy a shared variable");
-                            } else {
-                                LogError(op->getBeginLoc(), "Error copying shared variable due to lifetime extension");
-                            }
-                        }
-                    }
-                }
-            }
-            return true;
-        }
-
-        bool VisitReturnStmt(const ReturnStmt * ret) {
-
-            if (isEnabled() && ret) {
-
-                if (const ExprWithCleanups * inplace = dyn_cast_or_null<ExprWithCleanups>(ret->getRetValue())) {
-                    LogOnly(inplace->getBeginLoc(), "Return inplace object");
-                    return true;
-                }
-
-                std::string retval = getArgName(ret->getRetValue());
-                if (retval.empty()) {
-                    LogOnly(ret->getBeginLoc(), "Return is not a variable");
-                    return true;
-                }
-
-                int retval_level;
-                const char * retval_type = m_scopes.findVariable(retval, retval_level);
-                if (retval_type == nullptr) {
-                    LogError(ret->getBeginLoc(), "Return variable name not found!");
-                    return true;
-                }
-
-                if (std::string_view(AUTO_TYPE).compare(retval_type) == 0) {
-                    if (m_scopes.testUnsafe().isValid()) {
-                        LogWarning(ret->getBeginLoc(), "UNSAFE return auto variable");
-                    } else {
-                        LogOnly(ret->getBeginLoc(), "Return auto variable");
-                    }
-                } else if (std::string_view(SHARED_TYPE).compare(retval_type) == 0) {
-                    if (m_scopes.testUnsafe().isValid()) {
-                        LogWarning(ret->getBeginLoc(), "UNSAFE return shared variable");
-                    } else {
-                        LogError(ret->getBeginLoc(), "Return shared variable");
-                    }
-                }
-            }
-            return true;
-        }
-
-        bool VisitBinaryOperator(const BinaryOperator * op) {
-
-            if (op->isAssignmentOp()) {
-
-
-                std::string lval;
-                const char * lval_type;
-                int lval_level;
-                bool is_lval = checkArg(op->getLHS(), lval, lval_type, lval_level);
-
-
-                std::string rval;
-                const char * rval_type;
-                int rval_level;
-                bool is_rval = checkArg(op->getRHS(), rval, rval_type, rval_level);
-
-                if (is_lval && is_rval) {
-                    if (std::string_view(SHARED_TYPE).compare(lval_type) == 0 && std::string_view(SHARED_TYPE).compare(rval_type) == 0) {
-                        if (lval_level > rval_level) {
-                            LogOnly(op->getBeginLoc(), "Copy of shared variable with shorter lifetime");
-                        } else {
-                            if (m_scopes.testUnsafe().isValid()) {
-                                LogWarning(op->getBeginLoc(), "UNSAFE copy a shared variable");
-                            } else {
-                                LogError(op->getBeginLoc(), "Error copying shared variable due to lifetime extension");
-                            }
-                        }
-                    }
-                }
-            }
-            return true;
-        }
+        //  **************************************************************************************************
+        //  **************************************************************************************************
+        //  **************************************************************************************************
+        //  Disabled checks lifetime, ownership and borrowing due to change in approach to reference analysis
+        //
+        //  **************************************************************************************************
+        //  **************************************************************************************************
+        //  **************************************************************************************************
+        //
+        //        bool VisitCallExpr(const CallExpr * call) {
+        //            if (isEnabled() && call->getNumArgs() == 2) {
+        //
+        //                if (call->getDirectCallee()-> getQualifiedNameAsString().compare("std::swap") != 0) {
+        //                    // check only swap funstion or method
+        //                    return true;
+        //                }
+        //
+        //                std::string lval;
+        //                const char * lval_type;
+        //                int lval_level;
+        //
+        //                std::string rval;
+        //                const char * rval_type;
+        //                int rval_level;
+        //
+        //                if (checkArg(call->getArg(0), lval, lval_type, lval_level) && checkArg(call->getArg(1), rval, rval_type, rval_level)) {
+        //                    if (std::string_view(SHARED_TYPE).compare(lval_type) == 0 && std::string_view(SHARED_TYPE).compare(rval_type) == 0) {
+        //                        if (lval_level == rval_level) {
+        //                            LogOnly(call->getBeginLoc(), "Swap shared variables with the same lifetime");
+        //                        } else {
+        //                            if (m_scopes.testUnsafe().isValid()) {
+        //                                LogWarning(call->getBeginLoc(), "UNSAFE swap the shared variables with different lifetimes");
+        //                            } else {
+        //                                LogError(call->getBeginLoc(), "Error swap the shared variables with different lifetimes");
+        //                            }
+        //                        }
+        //                    }
+        //                }
+        //            }
+        //            return true;
+        //        }
+        //
+        //        bool VisitCXXOperatorCallExpr(const CXXOperatorCallExpr * op) {
+        //            if (isEnabled() && op->isAssignmentOp()) {
+        //
+        //                assert(op->getNumArgs() == 2);
+        //
+        //                std::string lval;
+        //                const char * lval_type;
+        //                int lval_level;
+        //
+        //                std::string rval;
+        //                const char * rval_type;
+        //                int rval_level;
+        //
+        //                if (checkArg(op->getArg(0), lval, lval_type, lval_level) && checkArg(op->getArg(1), rval, rval_type, rval_level)) {
+        //                    if (std::string_view(SHARED_TYPE).compare(lval_type) == 0 && std::string_view(SHARED_TYPE).compare(rval_type) == 0) {
+        //                        if (lval_level > rval_level) {
+        //                            LogOnly(op->getBeginLoc(), "Copy of shared variable with shorter lifetime");
+        //                        } else {
+        //                            if (m_scopes.testUnsafe().isValid()) {
+        //                                LogWarning(op->getBeginLoc(), "UNSAFE copy a shared variable");
+        //                            } else {
+        //                                LogError(op->getBeginLoc(), "Error copying shared variable due to lifetime extension");
+        //                            }
+        //                        }
+        //                    }
+        //                }
+        //            }
+        //            return true;
+        //        }
+        //        bool VisitReturnStmt(const ReturnStmt * ret) {
+        //
+        //            if (isEnabled() && ret) {
+        //
+        //                if (const ExprWithCleanups * inplace = dyn_cast_or_null<ExprWithCleanups>(ret->getRetValue())) {
+        //                    LogOnly(inplace->getBeginLoc(), "Return inplace object");
+        //                    return true;
+        //                }
+        //
+        //                std::string retval = getArgName(ret->getRetValue());
+        //                if (retval.empty()) {
+        //                    LogOnly(ret->getBeginLoc(), "Return is not a variable");
+        //                    return true;
+        //                }
+        //
+        //                int retval_level;
+        //                const char * retval_type = m_scopes.findVariable(retval, retval_level);
+        //                if (retval_type == nullptr) {
+        //                    LogError(ret->getBeginLoc(), "Return variable name not found!");
+        //                    return true;
+        //                }
+        //
+        //                if (std::string_view(AUTO_TYPE).compare(retval_type) == 0) {
+        //                    if (m_scopes.testUnsafe().isValid()) {
+        //                        LogWarning(ret->getBeginLoc(), "UNSAFE return auto variable");
+        //                    } else {
+        //                        LogOnly(ret->getBeginLoc(), "Return auto variable");
+        //                    }
+        //                } else if (std::string_view(SHARED_TYPE).compare(retval_type) == 0) {
+        //                    if (m_scopes.testUnsafe().isValid()) {
+        //                        LogWarning(ret->getBeginLoc(), "UNSAFE return shared variable");
+        //                    } else {
+        //                        LogError(ret->getBeginLoc(), "Return shared variable");
+        //                    }
+        //                }
+        //            }
+        //            return true;
+        //        }
+        //        bool VisitBinaryOperator(const BinaryOperator * op) {
+        //
+        //            if (isEnabled() && op->isAssignmentOp()) {
+        //
+        //                std::string lval;
+        //                const char * lval_type;
+        //                int lval_level;
+        //                bool is_lval = checkArg(op->getLHS(), lval, lval_type, lval_level);
+        //
+        //
+        //                std::string rval;
+        //                const char * rval_type;
+        //                int rval_level;
+        //                bool is_rval = checkArg(op->getRHS(), rval, rval_type, rval_level);
+        //
+        //                if (is_lval && is_rval) {
+        //                    if (std::string_view(SHARED_TYPE).compare(lval_type) == 0 && std::string_view(SHARED_TYPE).compare(rval_type) == 0) {
+        //                        if (lval_level > rval_level) {
+        //                            LogOnly(op->getBeginLoc(), "Copy of shared variable with shorter lifetime");
+        //                        } else {
+        //                            if (m_scopes.testUnsafe().isValid()) {
+        //                                LogWarning(op->getBeginLoc(), "UNSAFE copy a shared variable");
+        //                            } else {
+        //                                LogError(op->getBeginLoc(), "Error copying shared variable due to lifetime extension");
+        //                            }
+        //                        }
+        //                    }
+        //                }
+        //            }
+        //            return true;
+        //        }
+        //  **************************************************************************************************
+        //  **************************************************************************************************
+        //  **************************************************************************************************
 
         bool VisitUnaryOperator(const UnaryOperator * unary) {
 
-            if (unary->getOpcode() == UnaryOperator::Opcode::UO_AddrOf) {
+            if (isEnabled() && unary->getOpcode() == UnaryOperator::Opcode::UO_AddrOf) {
 
                 //https://github.com/llvm/llvm-project/blob/main/clang/include/clang/AST/OperationKinds.def                
                 //// [C++ 5.5] Pointer-to-member operators.
@@ -1546,8 +1909,7 @@ namespace {
                 //// [C++ Coroutines] co_await operator
                 //UNARY_OPERATION(Coawait, "co_await")
 
-                //                llvm::outs() << "m_scopes.testInplaceCaller(): " << m_scopes.testInplaceCaller() << "\n";
-
+                // @todo Receiving a raw pointer is an error ?
                 if (m_scopes.testInplaceCaller()) {
                     LogOnly(unary->getOperatorLoc(), "Inplace address arithmetic");
                 } else {
@@ -1576,6 +1938,8 @@ namespace {
 
                 if (AUTO_TYPE == found_type) {
 
+                    // @todo Is it possible to create temporary automatic variables as class fields whose instance lifetime can be any?
+
                     if (is_unsafe) {
                         LogWarning(field->getLocation(), std::format("UNSAFE create auto variabe as field {}:{}", var_name, found_type));
                     } else {
@@ -1583,15 +1947,16 @@ namespace {
                     }
 
 
-                } else {
+                } else if (field->getType()->isPointerType()) {
 
-                    if (field->getType()->isPointerType()) {
-                        if (is_unsafe) {
-                            LogWarning(field->getLocation(), "UNSAFE field type raw pointer");
-                        } else {
-                            LogError(field->getLocation(), "Field type raw pointer");
-                        }
+                    // any variant of a raw pointer or address is an error
+
+                    if (is_unsafe) {
+                        LogWarning(field->getLocation(), "UNSAFE field type raw pointer");
+                    } else {
+                        LogError(field->getLocation(), "Field type raw pointer");
                     }
+
                 }
             }
 
@@ -1633,16 +1998,48 @@ namespace {
 
         bool TraverseCXXRecordDecl(CXXRecordDecl * decl) {
 
-            if (isEnabled()) {
+            if (isEnabledStatus() && decl->hasDefinition()) {
 
-                m_scopes.PushScope(decl->getLocation(), decl, m_scopes.testUnsafe());
+                if (!scaner) {
+                    m_scopes.PushScope(decl->getLocation(), decl, m_scopes.testUnsafe());
+                }
 
-                auto list = MakeParentsList(*decl);
-                checkCycles(*decl, list);
+                if (m_is_cyclic_analysis) {
+                    try {
+
+                        ClassListType used;
+                        ClassListType fileds;
+
+                        // Don't add the name of the class being checked the first time,
+                        // so that circular dependencies can be detected
+                        MakeUsedClasses(*decl, used, fileds);
+
+                        if (!scaner) {
+                            // If this is the first pass at creating a circular reference file, 
+                            // it is not possible to analyze them now.
+                            if (!testSharedType(*decl, used)) {
+                                if (decl->hasDefinition()) {
+                                    m_not_shared_class[decl->getQualifiedNameAsString()] = {decl, decl->getLocation()};
+                                    LogOnly(decl->getLocation(), std::format("Class '{}' marked as not shared", decl->getQualifiedNameAsString()));
+                                }
+                            } else {
+                                if (checkCycles(*decl, used, fileds)) {
+                                    LogOnly(decl->getLocation(), std::format("Class '{}' checked for cyclic references", decl->getQualifiedNameAsString()));
+                                }
+                            }
+                        }
+
+                    } catch (...) {
+                        return false;
+                    }
+                }
 
                 RecursiveASTVisitor<MemSafePlugin>::TraverseCXXRecordDecl(decl);
 
-                m_scopes.PopScope();
+                if (!scaner) {
+                    m_scopes.PopScope();
+                }
+
                 return true;
             }
 
@@ -1768,7 +2165,7 @@ namespace {
         }
 
         bool TraverseParmVarDecl(ParmVarDecl * param) {
-            if (isEnabledStatus()) {
+            if (isEnabled()) {
                 m_scopes.AddVarDecl(param, checkClassNameTracking(param->getType()->getAsCXXRecordDecl()));
             }
             return true;
@@ -1793,7 +2190,7 @@ namespace {
                 const AttributedStmt * attrStmt = dyn_cast_or_null<AttributedStmt>(stmt);
                 const CompoundStmt * block = dyn_cast_or_null<CompoundStmt>(stmt);
 
-                if (attrStmt || block) {
+                if (isEnabled() && (attrStmt || block)) {
 
 
                     m_scopes.PushScope(stmt->getEndLoc(), std::monostate(), checkUnsafeBlock(attrStmt));
@@ -1861,6 +2258,72 @@ namespace {
             context.getParentMapContext().setTraversalKind(clang::TraversalKind::TK_IgnoreUnlessSpelledInSource);
             plugin->TraverseDecl(context.getTranslationUnitDecl());
 
+            if (scaner) {
+                if (context.getDiagnostics().hasErrorOccurred()) {
+                    fs::remove(scaner->m_file_name);
+                    llvm::outs() << "The file '" << scaner->m_file_name << "' was not written due to errors in the source code!\n";
+                } else {
+
+
+                    /* 
+                     * The circular reference analysis file provides information about all classes that are defined 
+                     * in the current translation unit (this means that the same class can be found in several files 
+                     * (i.e. translation units) at the same time).
+                     * 
+                     * For each class, all parent classes are saved and for fields, 
+                     * only their types are saved if they are shared (or pointers/references)
+                     */
+
+
+                    MemSafeFile::ClassReadType classes;
+                    MemSafePlugin::ClassListType parents;
+                    MemSafePlugin::ClassListType fields;
+                    MemSafeFile::ClassRead shared;
+
+                    for (auto elem : plugin->m_shared_type) {
+                        if (const CXXRecordDecl ** cls = std::get_if<const CXXRecordDecl *>(&elem.second)) {
+                            // Keep only those classes that are defined in the current translation unit
+                            if ((*cls)->hasDefinition()) {
+
+                                parents.clear();
+                                fields.clear();
+
+                                plugin->MakeUsedClasses(**cls, parents, fields);
+
+                                shared.parents.clear();
+                                for (auto par_elem : parents) {
+                                    shared.parents[par_elem.first] = MemSafeLogger::LocToStr(par_elem.second.second, context.getSourceManager());
+                                }
+
+                                plugin->reduceSharedList(fields, false);
+
+                                shared.fields.clear();
+                                for (auto fil_elem : fields) {
+                                    shared.fields[fil_elem.first] = MemSafeLogger::LocToStr(fil_elem.second.second, context.getSourceManager());
+                                }
+
+                                shared.comment = MemSafeLogger::LocToStr((*cls)->getLocation(), context.getSourceManager());
+                                classes[(*cls)->getQualifiedNameAsString()] = shared;
+
+                            }
+                        }
+                    }
+
+                    shared.parents.clear();
+                    shared.fields.clear();
+                    for (auto elem : plugin->m_not_shared_class) {
+                        if (plugin->m_shared_type.find(elem.first) == plugin->m_shared_type.end()) {
+                            shared.comment = "Not shared type at: ";
+                            shared.comment += MemSafeLogger::LocToStr(elem.second.second, context.getSourceManager());
+                            classes[elem.first] = shared;
+                        }
+                    }
+
+                    scaner->WriteFile(classes);
+                    llvm::outs() << "Write file '" << scaner->m_file_name << "' complete!\n";
+                }
+            }
+
             if (logger) {
                 logger->Dump(llvm::outs());
                 llvm::outs() << "\n";
@@ -1879,10 +2342,46 @@ namespace {
     class MemSafePluginASTAction : public PluginASTAction {
     public:
 
+        /* Three types of plugin execution:
+         *
+         * - In one pass for one translation unit (default).
+         * When all type definitions are in one file or strong references are not used 
+         * for forward declarations of types whose definitions are in other translation units.
+         *
+         * - The first pass when processing several translation units (when the circleref-write argument is specified).
+         * Create a file of the list of shared data types without performing the actual AST analysis.
+         *
+         * - The second pass when processing several translation units (when the circleref-read argument is specified).
+         * Perform direct analysis of the program source code analysis with control of recursive references,
+         * the list of which must be in the file created during the first processing of all translation units.
+         *
+         */
+        std::string m_shared_write;
+        std::string m_shared_read;
+        bool m_shared_disabled;
+
         std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &Compiler, StringRef InFile) override {
 
             std::unique_ptr<MemSafePluginASTConsumer> obj = std::unique_ptr<MemSafePluginASTConsumer>(new MemSafePluginASTConsumer());
 
+            if (m_shared_disabled) {
+
+                plugin->setCyclicAnalysis(false);
+                PrintColor(llvm::outs(), "Circular reference analysis disabled");
+
+            } else if (!m_shared_write.empty()) {
+
+                PrintColor(llvm::outs(), "Write the circular reference analysis data to file {}", m_shared_write);
+                scaner = std::unique_ptr<MemSafeFile>(new MemSafeFile(m_shared_write, InFile.str()));
+
+            } else if (!m_shared_read.empty()) {
+
+                PrintColor(llvm::outs(), "Read the circular reference analysis data from {}", m_shared_read);
+                MemSafeFile read(m_shared_read, InFile.str());
+
+                // Read the list of classes present in other files (translation units).
+                read.ReadFile(plugin->m_classes);
+            }
             return obj;
         }
 
@@ -1896,6 +2395,7 @@ namespace {
 
         bool ParseArgs(const CompilerInstance &CI, const std::vector<std::string> &args) override {
 
+            m_shared_disabled = false;
             plugin = std::unique_ptr<MemSafePlugin>(new MemSafePlugin(CI));
 
             llvm::outs().SetUnbuffered();
@@ -1914,13 +2414,39 @@ namespace {
                     second = "";
                 }
 
-                std::string message = plugin->processArgs(first, second);
+                std::string message = plugin->processArgs(first, second, SourceLocation());
 
                 if (!message.empty()) {
                     if (first.compare("log") == 0) {
 
                         logger = std::unique_ptr<MemSafeLogger>(new MemSafeLogger(CI));
                         PrintColor(llvm::outs(), "Enable dump and process logger");
+
+                    } else if (first.compare("circleref-disable") == 0) {
+
+                        if (!m_shared_read.empty() || !m_shared_write.empty()) {
+                            llvm::errs() << "Only one of the arguments 'circleref-read', 'circleref-write' or 'circleref-disable' is allowed!\n";
+                            return false;
+                        }
+                        m_shared_disabled = true;
+
+                    } else if (first.compare("circleref-write") == 0) {
+
+                        if (!m_shared_read.empty() || m_shared_disabled) {
+                            llvm::errs() << "Only one of the arguments 'circleref-read', 'circleref-write' or 'circleref-disable' is allowed!\n";
+                            return false;
+                        }
+
+                        m_shared_write = second.empty() ? MemSafeFile::SHARED_SCAN_FILE_DEFAULT : second;
+
+                    } else if (first.compare("circleref-read") == 0) {
+
+                        if (!m_shared_write.empty() || m_shared_disabled) {
+                            llvm::errs() << "Only one of the arguments 'circleref-read', 'circleref-write' or 'circleref-disable' is allowed!\n";
+                            return false;
+                        }
+
+                        m_shared_read = second.empty() ? MemSafeFile::SHARED_SCAN_FILE_DEFAULT : second;
 
                     } else {
                         llvm::errs() << "Unknown plugin argument: '" << elem << "'!\n";
