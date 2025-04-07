@@ -5,82 +5,121 @@
 
 using namespace memsafe;
 
-namespace cycles {
+namespace ns {
+    struct A;
 
+    // cyclic cross-references between classes that are defined in other translation units
+    //    struct A {
+    //        Shared<Ext> ext;
+    //    };
     MEMSAFE_BASELINE(100);
 
-    struct A { // Ok
+    class Ext {
+        Shared<A> a;
     };
 
-    class SharedA : public Shared<A> { // Ok
+}
+
+// cyclic-analyzer
+namespace cycles {
+
+    // simple circular self-references
+    MEMSAFE_BASELINE(1_000);
+
+    struct CircleSelf {
+        CircleSelf * self;
     };
 
-    struct B : public A { // Ok
+    struct CircleShared {
+        Shared<CircleShared> shared;
     };
 
-    struct C : public B {
-        Shared<A> a; // Error
+    struct CircleSelfUnsafe {
+        MEMSAFE_UNSAFE CircleSelf * self;
     };
 
-    struct D : public B {
-        SharedA a; // Error
-    };
-
-    struct E {
-        std::vector<E> e; // Error
-    };
-
-    struct F : public A {
-        std::vector<A> F; // Error
-    };
-
-    struct M {
-        std::map<C, D> m;
-    };
-
-    struct S {
-        std::map<SharedA, SharedA> s; // Error
+    struct CircleSharedUnsafe {
+        MEMSAFE_UNSAFE Shared<CircleShared> shared;
     };
 
 
 
+    // cyclic cross-references
+    MEMSAFE_BASELINE(2_000);
 
+    class SharedCross2;
+
+    class SharedCross {
+        SharedCross2 *cross2;
+    };
+
+    class SharedCross2 {
+        SharedCross *cross;
+    };
+
+    class SharedCrossUnsafe {
+        MEMSAFE_UNSAFE SharedCross2 *cross2;
+    };
+
+    class SharedCross2Unsafe {
+        MEMSAFE_UNSAFE SharedCross *cross;
+    };
+
+
+    // cyclic cross-references between classes that are defined in other translation units
+    MEMSAFE_BASELINE(3_000);
+
+    struct ExtExt : public ns::Ext {
+    };
+
+    class ExtExtExt : public ExtExt {
+    };
+
+
+
+    // Reference types in STD templates
+    MEMSAFE_BASELINE(4_000);
+
+    struct ArraySharedInt : public std::vector<Shared<int> > {
+    };
+
+    struct SharedArrayInt : public Shared<std::vector<int> > {
+    };
+
+
+
+    // Reference types when extending templates
+    MEMSAFE_BASELINE(5_000);
+
+    template <typename T>
+    class SharedSingle : public Shared<T, SyncSingleThread> {
+    };
+
+    class SharedSingleInt : public SharedSingle<int> {
+    };
+
+    class SharedSingleIntField {
+        SharedSingleInt shared_int;
+    };
+
+
+
+
+
+
+    // Non-reference types with weak references
     MEMSAFE_BASELINE(10_000);
-    namespace unsafe {
 
-        struct A { // Ok
-        };
+    class NotShared1 {
+        int interger;
+        std::weak_ptr<NotShared1> weak;
+    };
 
-        class SharedA : public Shared<A> { // Ok
-        };
+    struct NotShared2 : public NotShared1 {
+        NotShared1 not1;
+        std::weak_ptr<NotShared2> weak1;
+        Weak<Shared<int>> weak2;
+    };
 
-        struct B : public A { // Ok
-        };
-
-        struct C : public B {
-            MEMSAFE_UNSAFE Shared<A> a; // Unsafe
-        };
-
-        struct D : public B {
-            MEMSAFE_UNSAFE SharedA a; // Unsafe
-        };
-
-        struct E {
-            MEMSAFE_UNSAFE std::vector<E> e; // Unsafe
-        };
-
-        struct F : public A {
-            MEMSAFE_UNSAFE std::vector<A> F; // Unsafe
-        };
-
-        struct MEMSAFE_UNSAFE U {
-            std::map<C, D> m; // Unsafe
-            std::map<C, D> m2; // Unsafe
-            std::map<SharedA, SharedA> s; // Unsafe
-            std::vector<A> F; // Unsafe
-        };
-
-
-    }
 }
 

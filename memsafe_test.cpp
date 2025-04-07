@@ -13,6 +13,7 @@
 
 using namespace memsafe;
 using namespace std::chrono_literals;
+namespace fs = std::filesystem;
 
 TEST(MemSafe, Sizes) {
 
@@ -139,16 +140,16 @@ TEST(MemSafe, Sizes) {
     EXPECT_EQ(16, sizeof (Weak<Shared<int, SyncTimedMutex>>));
     EXPECT_EQ(16, sizeof (Weak<Shared<int, SyncTimedShared>>));
 
-    EXPECT_EQ(16, sizeof (Auto<int, Shared<int>>));
-    EXPECT_EQ(16, sizeof (Auto<int, Shared<int, SyncSingleThread>>));
-    EXPECT_EQ(16, sizeof (Auto<int, Shared<int, SyncTimedMutex>>));
-    EXPECT_EQ(16, sizeof (Auto<int, Shared<int, SyncTimedShared>>));
+    EXPECT_EQ(16, sizeof (Locker<int, Shared<int>>));
+    EXPECT_EQ(16, sizeof (Locker<int, Shared<int, SyncSingleThread>>));
+    EXPECT_EQ(16, sizeof (Locker<int, Shared<int, SyncTimedMutex>>));
+    EXPECT_EQ(16, sizeof (Locker<int, Shared<int, SyncTimedShared>>));
 
-    EXPECT_EQ(8, sizeof (Auto<int, int&>));
-    EXPECT_EQ(8, sizeof (Auto<uint8_t, uint8_t&>));
-    EXPECT_EQ(8, sizeof (Auto<uint16_t, uint16_t&>));
-    EXPECT_EQ(8, sizeof (Auto<uint32_t, uint32_t&>));
-    EXPECT_EQ(8, sizeof (Auto<uint64_t, uint64_t&>));
+    EXPECT_EQ(8, sizeof (Locker<int, int&>));
+    EXPECT_EQ(8, sizeof (Locker<uint8_t, uint8_t&>));
+    EXPECT_EQ(8, sizeof (Locker<uint16_t, uint16_t&>));
+    EXPECT_EQ(8, sizeof (Locker<uint32_t, uint32_t&>));
+    EXPECT_EQ(8, sizeof (Locker<uint64_t, uint64_t&>));
 }
 
 TEST(MemSafe, Cast) {
@@ -162,47 +163,47 @@ TEST(MemSafe, Cast) {
 
     Value<int> value_int(0);
     int & take_value = *value_int;
-    Auto<int, int&> take_value2 = value_int.take();
+    Locker<int, int&> take_value2 = value_int.lock();
 
     Shared<int> shared_int(0);
 
     //    Auto<int, Shared<int>> take_shared = *shared_int;
-    Auto<int, Shared<int>::SharedType> take_shared1 = shared_int.take();
+    Locker<int, Shared<int>::SharedType> take_shared1 = shared_int.lock();
     //    int & take_shared1 = *shared_int;
 
     ASSERT_EQ(0, *take_shared1);
-    ASSERT_EQ(0, *shared_int.take());
+    ASSERT_EQ(0, *shared_int.lock());
     //    ASSERT_EQ(0, **shared_int);
-    *shared_int.take() = 11;
+    *shared_int.lock() = 11;
     //    **shared_int = 11;
     //    ASSERT_EQ(11, **shared_int);
-    ASSERT_EQ(11, *shared_int.take());
+    ASSERT_EQ(11, *shared_int.lock());
 
-    auto var_take_shared = shared_int.take();
+    auto var_take_shared = shared_int.lock();
     int & take_shared2 = *var_take_shared;
 
 
     Shared<int, SyncSingleThread> sync_int(22);
-    Auto<int, Shared<int, SyncSingleThread>::SharedType> take_sync_int = sync_int.take();
-    auto auto_sync_int = sync_int.take();
+    Locker<int, Shared<int, SyncSingleThread>::SharedType> take_sync_int = sync_int.lock();
+    auto auto_sync_int = sync_int.lock();
     //    auto auto_sync_int = *sync_int;
 
-    ASSERT_EQ(22, *sync_int.take());
+    ASSERT_EQ(22, *sync_int.lock());
     //    ASSERT_EQ(22, **sync_int);
 
     *auto_sync_int = 33;
     ASSERT_EQ(33, *auto_sync_int);
-    ASSERT_EQ(33, *sync_int.take());
+    ASSERT_EQ(33, *sync_int.lock());
     //    ASSERT_EQ(33, **sync_int);
 
-    int temp_sync = *sync_int.take();
-    *sync_int.take() = 44;
+    int temp_sync = *sync_int.lock();
+    *sync_int.lock() = 44;
     //    **sync_int = 44;
 
     ASSERT_EQ(33, temp_sync);
     ASSERT_EQ(44, *auto_sync_int);
     //    ASSERT_EQ(44, **sync_int);
-    ASSERT_EQ(44, *sync_int.take());
+    ASSERT_EQ(44, *sync_int.lock());
 
 
     auto weak_shared(shared_int.weak());
@@ -230,17 +231,17 @@ TEST(MemSafe, Cast) {
 
     //template <typename V, typename T = V, typename W = std::weak_ptr<T>> class VarWeak;
     //    ASSERT_NO_THROW(**weak_shared1);
-    ASSERT_NO_THROW(*weak_shared1.take());
+    ASSERT_NO_THROW(*weak_shared1.lock());
 
-    Auto<int, Shared<int>::SharedType> auto_shared(weak_shared1.take());
+    Locker<int, Shared<int>::SharedType> auto_shared(weak_shared1.lock());
     ASSERT_EQ(3, sync_int.use_count());
 
     //    auto auto_guard1(weak_guard1.take());
 
     //    ASSERT_NO_THROW(**sync_int);
-    ASSERT_NO_THROW(*sync_int.take());
+    ASSERT_NO_THROW(*sync_int.lock());
     {
-        auto taken = sync_int.take();
+        auto taken = sync_int.lock();
     }
 
     //    VarAuto<int, VarGuard<int, VarGuardData<int>>> auto_guard2(weak_guard1.take());
@@ -358,7 +359,7 @@ TEST(MemSafe, Threads) {
 
         std::thread other([&]() {
             try {
-                var_single.take();
+                var_single.lock();
             } catch (...) {
                 catched = true;
             }
@@ -381,7 +382,7 @@ TEST(MemSafe, Threads) {
                 const auto start = std::chrono::high_resolution_clock::now();
                 std::this_thread::sleep_for(100ms);
                 elapsed = std::chrono::high_resolution_clock::now() - start;
-                var_mutex.take();
+                var_mutex.lock();
             } catch (...) {
                 catched = true;
             }
@@ -401,9 +402,9 @@ TEST(MemSafe, Threads) {
 
         std::thread read([&]() {
             try {
-                auto a1 = var_recursive.take_const();
-                auto a2 = var_recursive.take_const();
-                auto a3 = var_recursive.take_const();
+                auto a1 = var_recursive.lock_const();
+                auto a2 = var_recursive.lock_const();
+                auto a3 = var_recursive.lock_const();
             } catch (...) {
                 not_catched = false;
             }
@@ -415,9 +416,9 @@ TEST(MemSafe, Threads) {
 
         std::thread write([&]() {
             try {
-                auto a1 = var_recursive.take();
-                auto a2 = var_recursive.take();
-                auto a3 = var_recursive.take();
+                auto a1 = var_recursive.lock();
+                auto a2 = var_recursive.lock();
+                auto a3 = var_recursive.lock();
             } catch (...) {
                 not_catched = false;
             }
@@ -545,10 +546,150 @@ TEST(MemSafe, Separartor) {
     EXPECT_STREQ("111_111_111_111", SeparatorInsert(111'111'111'111, '_').c_str());
 }
 
+TEST(MemSafe, MemSafeFile) {
+
+    std::string filename = "unittest-circleref.memsafe";
+
+    fs::remove(filename);
+    ASSERT_FALSE(fs::exists(filename));
+
+    MemSafeFile::ClassReadType classes;
+
+    {
+        MemSafeFile file(filename, "file_empty.cpp");
+
+        file.WriteFile(classes);
+
+        ASSERT_TRUE(fs::exists(filename));
+        MemSafeFile::ClassReadType readed;
+        ASSERT_NO_THROW(file.ReadFile(readed));
+        ASSERT_TRUE(readed.empty());
+    }
+    {
+        MemSafeFile file(filename, "file1.cpp");
+
+        classes["class0"] = {};
+
+        classes["class1"].parents = {
+            {
+                "ns::class1", "filepos:1"
+            },
+            {
+                "ns::class2", "filepos:2"
+            },
+        };
+        classes["class1"].fields = {
+            {
+                "ns::field1", "filepos:1"
+            },
+            {
+                "ns::field2", "filepos:2"
+            },
+        };
+
+        file.WriteFile(classes);
+
+        ASSERT_TRUE(fs::exists(filename));
+
+        {
+            MemSafeFile file(filename, "file_read.cpp");
+
+            MemSafeFile::ClassReadType readed;
+
+            ASSERT_NO_THROW(file.ReadFile(readed));
+
+            ASSERT_EQ(2, readed.size());
+            ASSERT_EQ(0, readed["class0"].parents.size());
+            ASSERT_EQ(0, readed["class0"].fields.size());
+            ASSERT_EQ(2, readed["class1"].parents.size());
+            ASSERT_EQ(2, readed["class1"].fields.size());
+
+            ASSERT_STREQ("filepos:1", readed["class1"].parents["ns::class1"].c_str());
+            ASSERT_STREQ("filepos:2", readed["class1"].parents["ns::class2"].c_str());
+            ASSERT_STREQ("filepos:1", readed["class1"].fields["ns::field1"].c_str());
+            ASSERT_STREQ("filepos:2", readed["class1"].fields["ns::field2"].c_str());
+        }
+    }
+    {
+        MemSafeFile file(filename, "file2.cpp");
+
+        ASSERT_TRUE(fs::exists(filename));
+
+
+        classes.erase(classes.find("class0"));
+
+        classes["class1"].parents = {
+            {
+                "ns::class1", "filepos:111"
+            },
+            {
+                "ns::class2", "filepos:222"
+            },
+        };
+        classes["class1"].fields = {
+            {
+                "ns::field1", "filepos:111"
+            },
+            {
+                "ns::field2", "filepos:222"
+            },
+        };
+
+
+        file.WriteFile(classes);
+
+        ASSERT_TRUE(fs::exists(filename));
+
+        MemSafeFile::ClassReadType readed;
+
+        ASSERT_NO_THROW(file.ReadFile(readed));
+
+        ASSERT_EQ(2, readed.size());
+        ASSERT_EQ(0, readed["class0"].parents.size());
+        ASSERT_EQ(0, readed["class0"].fields.size());
+        ASSERT_EQ(2, readed["class1"].parents.size());
+        ASSERT_EQ(2, readed["class1"].fields.size());
+
+        ASSERT_STREQ("filepos:1", readed["class1"].parents["ns::class1"].c_str());
+        ASSERT_STREQ("filepos:2", readed["class1"].parents["ns::class2"].c_str());
+        ASSERT_STREQ("filepos:1", readed["class1"].fields["ns::field1"].c_str());
+        ASSERT_STREQ("filepos:2", readed["class1"].fields["ns::field2"].c_str());
+    }
+    fs::remove(filename);
+    filename += ".bak";
+    fs::remove(filename);
+}
+
+TEST(MemSafe, WeakList) {
+
+    LinkedWeakList<int> int_list;
+
+    ASSERT_TRUE(int_list.empty());
+    ASSERT_STREQ("nullptr", int_list.to_string().c_str()) << int_list.to_string();
+    ASSERT_EQ(0, int_list.size());
+    int_list.push_back(1);
+    ASSERT_STREQ("1 -> ", int_list.to_string().c_str()) << int_list.to_string();
+    ASSERT_EQ(1, int_list.size());
+    int_list.push_back(2);
+    ASSERT_STREQ("1 -> 2 -> ", int_list.to_string().c_str()) << int_list.to_string();
+    ASSERT_EQ(2, int_list.size());
+    int_list.push_back(3);
+    ASSERT_STREQ("1 -> 2 -> 3 -> ", int_list.to_string().c_str()) << int_list.to_string();
+    ASSERT_EQ(3, int_list.size());
+    int_list.push_front(0);
+    int_list.push_front(0);
+    ASSERT_STREQ("0 -> 0 -> 1 -> 2 -> 3 -> ", int_list.to_string().c_str()) << int_list.to_string();
+    ASSERT_EQ(5, int_list.size());
+    int_list.pop_front();
+    ASSERT_STREQ("0 -> 1 -> 2 -> 3 -> ", int_list.to_string().c_str()) << int_list.to_string();
+    ASSERT_EQ(4, int_list.size());
+    int_list.pop_back();
+    ASSERT_STREQ("0 -> 1 -> 2 -> ", int_list.to_string().c_str()) << int_list.to_string();
+    ASSERT_EQ(3, int_list.size());
+    ASSERT_FALSE(int_list.empty());
+}
+
 TEST(MemSafe, Plugin) {
-
-    namespace fs = std::filesystem;
-
 
     // Example of running a plugin to compile a file
 
@@ -568,6 +709,7 @@ TEST(MemSafe, Plugin) {
     cmd += " -std=c++20 -ferror-limit=500 ";
     cmd += " -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe ";
     cmd += " -Xclang -plugin-arg-memsafe -Xclang log ";
+    cmd += " -Xclang -plugin-arg-memsafe -Xclang circleref-disable";
     cmd += " -c _example.cpp > _example.cpp.log";
 
     const char * file_log = "_example.cpp.log";
@@ -595,105 +737,59 @@ TEST(MemSafe, Plugin) {
 
 
     std::vector<std::string> diag({
-    "#log #201",
-    "#log #201",
-    "#log #202",
-    "#log #202",
-    "#log #202",
-    "#err #204",
-    "#err #204",
-    "#log #207",
-    "#log #207",
-    "#log #208",
-    "#err #209",
-    "#log #209",
-    "#warn #208",
-    "#err #209",
-    "#log #301",
-    "#log #301",
-    "#log #302",
-    "#warn #301",
-    "#warn #302",
-    "#err #303",
-    "#log #303",
-    "#log #401",
-    "#log #402",
-    "#log #501",
-    "#log #901",
-    "#log #902",
-    "#log #903",
-    "#log #903",
-    "#log #1001",
-    "#log #1002",
-    "#log #1003",
-    "#log #2003",
-    "#log #2004",
-    "#err #3002",
-    "#log #3002",
-    "#err #3003",
-    "#log #3003",
-    "#log #3003",
-    "#log #4101",
-    "#log #4103",
-    "#log #4105",
-    "#log #4201",
-    "#log #4202",
-    "#err #4301",
-    "#log #4302",
-    "#warn #4302",
-    "#log #4401",
-    "#err #4402",
-    "#err #4403",
-    "#log #4404",
-    "#log #4501",
-    "#err #4503",
-    "#err #4504",
-    "#log #4505",
-    "#log #4507",
-    "#log #4508",
-    "#err #4510",
-    "#log #4513",
-    "#warn #4513",
-    "#err #4515",
-    "#log #4601",
-    "#err #4602",
-    "#log #4603",
-    "#warn #4603",
-    "#err #4701",
-    "#log #4702",
-    "#log #4703",
-    "#log #4704",
-    "#log #4704",
-    "#log #4801",
-    "#err #7003",
-    "#log #7004",
-    "#log #7005",
-    "#err #7006",
-    "#log #7007",
-    "#log #7009",
-    "#err #7010",
-    "#log #7011",
-    "#err #7012",
-    "#err #8901",
-    "#log #9901",
-//    "#log #900011002",
-//    "#log #900011002",
-//    "#log #900011003",
-//    "#log #900011003",
-//    "#warn #900011003",
-//    "#err #900011004",
-//    "#log #900011004",
-//    "#log #900012002",
-//    "#log #900012003",
-//    "#log #900012003",
-//    "#log #900012004",
-//    "#warn #900012003",
-//    "#err #900012004",
+        "#log #201",
+        "#log #201",
+        "#log #202",
+        "#log #202",
+        "#log #202",
+        "#err #204",
+        "#err #204",
+        "#log #207",
+        "#log #207",
+        "#log #208",
+        "#err #209",
+        "#log #209",
+        "#warn #208",
+        "#err #209",
+        "#log #301",
+        "#log #302",
+        "#warn #301",
+        "#warn #302",
+        "#err #303",
+        "#log #303",
+        "#log #401",
+        "#log #402",
+        "#log #901",
+        "#log #903",
+        "#log #1001",
+        "#log #1002",
+        "#log #1003",
+        "#log #2003",
+        "#log #2004",
+        "#err #3002",
+        "#log #3002",
+        "#err #3003",
+        "#log #3003",
+        "#log #3003",
+        "#log #4101",
+        "#log #4103",
+        "#log #4105",
+        "#log #4201",
+        "#log #4202",
+        "#log #4302",
+        "#log #4401",
+        "#log #4501",
+        "#log #4513",
+        "#log #4603",
+        "#err #7003",
+        "#log #7003",
+        "#log #7004",
+        "#log #7005",
+        "#log #7009",
 
         //bugfix_11()
         "#log #900011002",
         "#log #900011002",
-        "#log #900011003",
         "#log #900011003",
         "#warn #900011003",
         "#err #900011004",
@@ -702,8 +798,6 @@ TEST(MemSafe, Plugin) {
         //bugfix_12()
         "#log #900012002",
         "#log #900012003",
-        "#log #900012003",
-        "#log #900012004",
         "#warn #900012003",
         "#err #900012004",
     });
@@ -764,33 +858,16 @@ TEST(MemSafe, Plugin) {
 
 TEST(MemSafe, Cycles) {
 
-    namespace fs = std::filesystem;
+    const std::string cmd_base = "clang-20 -std=c++20 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -Xclang -plugin-arg-memsafe -Xclang log ";
 
 
-    // Example of running a plugin to compile a file
-
-    /* The plugin operation is checked as follows.
-     * A specific file with examples of template usage from the metsafe/ file is compiled
-     * The example file contains correct C++ code, 
-     * but the variables in it are used both correctly and with violations of the rules.
-     * 
-     * When compiling a file with an analyzer plugin, the debug output is written to a file.
-     * This file is read in the test and debug messages of the plugin 
-     * are searched for in it (both successful and unsuccessful checks).
-     * 
-     * If all check messages are found, the test is considered successful.
-     */
-
-    std::string cmd = "clang-20";
-    cmd += " -std=c++20 -ferror-limit=500 ";
-    cmd += " -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe ";
-    cmd += " -Xclang -plugin-arg-memsafe -Xclang log ";
-    cmd += " -c _cycles.cpp > _cycles.cpp.log";
+    fs::remove(MemSafeFile::SHARED_SCAN_FILE_DEFAULT);
 
     const char * file_log = "_cycles.cpp.log";
     fs::remove(file_log);
 
-    int err = std::system(cmd.c_str());
+    std::system(std::format("{} -c _cycles.cpp > _cycles.cpp.log", cmd_base).c_str());
+
 
     ASSERT_TRUE(fs::exists(file_log));
     std::ifstream log_file(file_log);
@@ -804,34 +881,118 @@ TEST(MemSafe, Cycles) {
     log_file.close();
 
 
-    ASSERT_TRUE(!log_output.empty());
+    ASSERT_TRUE(log_output.find("not found in current translation unit.") != std::string::npos);
 
-    ASSERT_TRUE(log_output.find("Enable dump and process logger") != std::string::npos &&
-            log_output.find("unprocessed attribute!") == std::string::npos)
-            << log_output;
+    ASSERT_FALSE(fs::exists(MemSafeFile::SHARED_SCAN_FILE_DEFAULT));
+    fs::remove("_example.cpp.log");
+
+    std::system(std::format("{} -Xclang -plugin-arg-memsafe -Xclang circleref-write -fsyntax-only _example.cpp > _example.cpp.log", cmd_base).c_str());
+
+    ASSERT_TRUE(fs::exists("_example.cpp.log"));
+    ASSERT_TRUE(fs::exists(MemSafeFile::SHARED_SCAN_FILE_DEFAULT));
+
+
+    std::ifstream example_file("_example.cpp.log");
+    ASSERT_TRUE(example_file.is_open());
+
+    std::stringstream example_file_buffer;
+    example_file_buffer << example_file.rdbuf();
+
+    std::string example_log = example_file_buffer.str();
+    example_file.close();
+
+    ASSERT_TRUE(example_log.size() > 100);
+    ASSERT_TRUE(example_log.find("The circular reference analyzer requires two passes.") == std::string::npos);
+
+    std::system(std::format("{} -Xclang -plugin-arg-memsafe -Xclang circleref-read -c _cycles.cpp > _cycles.cpp.log", cmd_base).c_str());
+
+
+    ASSERT_TRUE(fs::exists(file_log));
+    std::ifstream log_file2(file_log);
+
+    ASSERT_TRUE(log_file2.is_open());
+
+    std::stringstream log_buffer2;
+    log_buffer2 << log_file2.rdbuf();
+
+    std::string log_output2 = log_buffer2.str();
+    log_file2.close();
+
+
+
+    ASSERT_TRUE(log_output2.size() > 100);
+    ASSERT_TRUE(log_output2.find("The circular reference analyzer requires two passes.") == std::string::npos);
+
+
+    ASSERT_TRUE(!log_output2.empty());
+
+    ASSERT_TRUE(log_output2.find("Enable dump and process logger") != std::string::npos &&
+            log_output2.find("unprocessed attribute!") == std::string::npos)
+            << log_output2;
 
 
     std::vector<std::string> diag({
-
-        "#err #112",
-        "#err #116",
-        "#err #120",
-        "#err #124",
-        "#err #128",
-        "#err #132",
-        "#warn #10013",
-        "#warn #10017",
-        "#warn #10021",
-        "#warn #10025",
-        "#warn #10029",
-        "#warn #10030",
-        "#warn #10031",
-        "#warn #10032",
+        "#log #102",
+        "#log #103",
+        "#log #102",
+        "#log #1003",
+        "#log #1002",
+        "#err #1003",
+        "#err #1003",
+        "#log #1006",
+        "#err #1007",
+        "#log #1011",
+        "#log #1010",
+        "#log #1003",
+        "#err #1003",
+        "#warn #1011",
+        "#log #1014",
+        "#err #1007",
+        "#log #2009",
+        "#log #2002",
+        "#log #2005",
+        "#err #2005",
+        "#log #2005",
+        "#log #2004",
+        "#log #2009",
+        "#err #2009",
+        "#err #2005",
+        "#log #2009",
+        "#log #2008",
+        "#log #2005",
+        "#err #2005",
+        "#err #2009",
+        "#log #2013",
+        "#log #2012",
+        "#log #2009",
+        "#log #2012",
+        "#warn #2013",
+        "#log #2017",
+        "#log #2016",
+        "#log #2005",
+        "#log #2016",
+        "#warn #2017",
+        "#log #3002",
+        "#log #3002",
+        "#log #3005",
+        "#log #3005",
+        "#log #4002",
+        "#log #4002",
+        "#log #4005",
+        "#log #4005",
+        "#log #5003",
+        "#log #5003",
+        "#log #5006",
+        "#log #5006",
+        "#log #5009",
+        "#log #5009",
+        "#log #10002",
+        "#log #10007",
     });
 
-    size_t pos = log_output.find(MEMSAFE_KEYWORD_START_LOG);
+    size_t pos = log_output2.find(MEMSAFE_KEYWORD_START_LOG);
     ASSERT_TRUE(pos != std::string::npos);
-    std::string log_str = log_output.substr(pos + strlen(MEMSAFE_KEYWORD_START_LOG), log_output.find("\n\n", pos + strlen(MEMSAFE_KEYWORD_START_LOG)) - pos - strlen(MEMSAFE_KEYWORD_START_LOG));
+    std::string log_str = log_output2.substr(pos + strlen(MEMSAFE_KEYWORD_START_LOG), log_output2.find("\n\n", pos + strlen(MEMSAFE_KEYWORD_START_LOG)) - pos - strlen(MEMSAFE_KEYWORD_START_LOG));
 
     //    std::cout << "\n" << log_str << "\n\n";
 
@@ -881,6 +1042,29 @@ TEST(MemSafe, Cycles) {
         ADD_FAILURE() << "Diag not found: " << elem;
     }
 
+    std::string temp_memsafe = "unittest-all.memsafe";
+
+    fs::remove(temp_memsafe);
+    ASSERT_TRUE(!fs::exists(temp_memsafe));
+
+    std::system(std::format("{} -Xclang -plugin-arg-memsafe -Xclang circleref-write={} -fsyntax-only _example.cpp > _example.second.log", cmd_base, temp_memsafe).c_str());
+    std::system(std::format("{} -Xclang -plugin-arg-memsafe -Xclang circleref-write={} -fsyntax-only _cycles.cpp > _cycles.second.log", cmd_base, temp_memsafe).c_str());
+
+    ASSERT_TRUE(fs::exists(temp_memsafe));
+
+    MemSafeFile file(temp_memsafe, "unit_test.not_file");
+
+    MemSafeFile::ClassReadType readed;
+
+    ASSERT_NO_THROW(file.ReadFile(readed));
+
+    std::string shared = MemSafeFile::to_string(readed);
+
+    ASSERT_STREQ("cycles::ArraySharedInt {std::vector} fields:{}\ncycles::CircleSelf {} fields:{cycles::CircleSelf}\ncycles::CircleSelfUnsafe {} fields:{cycles::CircleSelf}\ncycles::CircleShared {} fields:{cycles::CircleShared}\ncycles::CircleSharedUnsafe {} fields:{cycles::CircleShared}\ncycles::ExtExt {ns::Ext} fields:{}\ncycles::ExtExtExt {cycles::ExtExt} fields:{}\ncycles::SharedArrayInt {std::vector} fields:{}\ncycles::SharedCross {} fields:{cycles::SharedCross2}\ncycles::SharedCross2 {} fields:{cycles::SharedCross}\ncycles::SharedCross2Unsafe {} fields:{cycles::SharedCross}\ncycles::SharedCrossUnsafe {} fields:{cycles::SharedCross2}\ncycles::SharedSingle {} fields:{}\ncycles::SharedSingleInt {} fields:{}\ncycles::SharedSingleIntField {} fields:{cycles::SharedSingleInt}\nns::A {} fields:{ns::Ext}\nns::Ext {} fields:{ns::A}\n", shared.c_str()) << shared;
+
+    fs::remove("_example.second.log");
+    fs::remove("_cycles.second.log");
+    fs::remove(temp_memsafe);
 }
 
 #endif
