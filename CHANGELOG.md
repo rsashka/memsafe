@@ -1,5 +1,13 @@
 # Version history
 
+## Release v0.4 (07.04.2025)
+- The theses that guarantee safe memory management are formulated.
+- The plugin now supports analysis of cyclic references between classes.
+- The name of the automatic variable class has been renamed to Locker to match the logic of the functionality it performs.
+- Disabled ownership checks and strong reference borrowing as it is no longer required.
+
+------
+
 
 ## Release v0.3 (17.03.2025)
 - Refactor the library interface to simplify inheritance:    

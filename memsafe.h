@@ -12,6 +12,7 @@
 #include <mutex>
 #include <shared_mutex>
 #include <thread>
+#include <set>
 
 #include <format>
 
@@ -278,10 +279,10 @@ namespace memsafe { // Begin define memory safety classes
      */
 
     template <typename V, typename T>
-    class Auto {
+    class Locker {
     public:
 
-        Auto(T val) : value(val) {
+        Locker(T val) : value(val) {
         }
 
         inline V& operator*() {
@@ -302,7 +303,7 @@ namespace memsafe { // Begin define memory safety classes
             }
         }
 
-        inline ~Auto() {
+        inline ~Locker() {
             if constexpr (std::is_convertible_v<T, std::shared_ptr<Sync < V>>>) {
                 value->UnLock();
             } else {
@@ -314,11 +315,11 @@ namespace memsafe { // Begin define memory safety classes
         T value; // Type T can be a reference to data i.e. V& or a shared_ptr<Sync<V>>
 
         // Noncopyable
-        Auto(const Auto&) = delete;
-        Auto& operator=(const Auto&) = delete;
+        Locker(const Locker&) = delete;
+        Locker& operator=(const Locker&) = delete;
         // Nonmovable
-        Auto(Auto&&) = delete;
-        Auto& operator=(Auto&&) = delete;
+        Locker(Locker&&) = delete;
+        Locker& operator=(Locker&&) = delete;
     };
 
     /**
@@ -342,16 +343,16 @@ namespace memsafe { // Begin define memory safety classes
             return value;
         };
 
-        inline Auto<V, V&> take() {
-            return Auto<V, V&> (value);
+        inline Locker<V, V&> lock() {
+            return Locker<V, V&> (value);
         }
 
-        inline Auto<V, V&> take() const {
-            return take_const();
+        inline Locker<V, V&> lock() const {
+            return lock_const();
         }
 
-        inline const Auto<V, V&> take_const() const {
-            return Auto<V, V&> (value);
+        inline const Locker<V, V&> lock_const() const {
+            return Locker<V, V&> (value);
         }
     };
 
@@ -383,7 +384,7 @@ namespace memsafe { // Begin define memory safety classes
         Shared(Shared<V, S> &val) : SharedType(val) {
         }
 
-        static Auto<V, SharedType> make_auto(SharedType * shared, bool read_only, const SyncTimeoutType &timeout = SyncTimeoutDeedlock) {
+        static Locker<V, SharedType> make_auto(SharedType * shared, bool read_only, const SyncTimeoutType &timeout = SyncTimeoutDeedlock) {
             if constexpr (!std::is_same_v<Sync<V>, DataType>) { // The Sync class is virtual
                 if (!shared || !shared->get()) {
                     throw memsafe_error("Object missing (null pointer exception)");
@@ -392,26 +393,42 @@ namespace memsafe { // Begin define memory safety classes
                     throw memsafe_error(std::format("try_lock{} timeout", read_only ? " read only" : ""));
                 }
             }
-            return Auto<V, SharedType> (*shared);
+            return Locker<V, SharedType> (*shared);
         }
 
-        Auto<V, SharedType> take(const SyncTimeoutType &timeout = SyncTimeoutDeedlock) {
+        Locker<V, SharedType> lock(const SyncTimeoutType &timeout = SyncTimeoutDeedlock) {
             return make_auto(this, false, timeout);
         }
 
-        Auto<V, SharedType> take_const(const SyncTimeoutType &timeout = SyncTimeoutDeedlock) {
+        Locker<V, SharedType> lock_const(const SyncTimeoutType &timeout = SyncTimeoutDeedlock) {
             return make_auto(this, true, timeout);
         }
 
-        //        inline Auto<V, Shared<V, S>> operator*() {
-        //
-        //            return make_auto(false);
+//        template < typename = std::enable_if<std::is_trivially_copyable_v < V >> >
+        inline V & operator*() const {
+            auto guard_lock = lock_const();
+            return *guard_lock;
+        }
+
+//        template < typename = std::enable_if<std::is_trivially_copyable_v < V >> >
+        inline SharedType & operator=(V && value) {
+            auto guard_lock = lock();
+            *guard_lock = value;
+            return *this;
+        }
+
+        inline SharedType & set(V && value, const SyncTimeoutType &timeout = SyncTimeoutDeedlock) {
+            auto guard_lock = lock(timeout);
+            *guard_lock = value;
+            return *this;
+        }
+        
+        //        template < typename = std::enable_if<std::is_trivially_copyable_v < V >> >
+        //        inline SharedType & operator=(SharedType & s) {
+        //            auto guard_lock = lock_const();
+        //            return this->memsafe::shared_ptr<S < V>>::operator*().data;
         //        }
         //
-        //        inline const Auto<V, Shared<V, S>> operator*() const {
-        //
-        //            return make_auto(true);
-        //        }
 
         inline Weak<Shared < V, S >> weak() {
             return Weak<Shared < V, S >> (*this);
@@ -439,31 +456,37 @@ namespace memsafe { // Begin define memory safety classes
         Weak(Weak & old) : T::WeakType(old) {
         }
 
-        //        Weak(Weak && old) : T::WeakType(old) {
-        //        }
-
-        Auto<typename T::ValueType, typename T::SharedType> make_auto(bool read_only, const SyncTimeoutType &timeout = SyncTimeoutDeedlock) {
-            typename T::SharedType shared = this->lock();
+        Locker<typename T::ValueType, typename T::SharedType> make_auto(bool read_only, const SyncTimeoutType &timeout = SyncTimeoutDeedlock) {
+            typename T::SharedType shared = this->T::WeakType::lock();
             return T::make_auto(&shared, read_only, timeout);
         }
 
-        inline Auto<typename T::ValueType, typename T::SharedType> take(const SyncTimeoutType &timeout = SyncTimeoutDeedlock) {
+        inline Locker<typename T::ValueType, typename T::SharedType> lock(const SyncTimeoutType &timeout = SyncTimeoutDeedlock) {
             return make_auto(false, timeout);
         }
 
-        inline const Auto<typename T::ValueType, T> take_const(const SyncTimeoutType &timeout = SyncTimeoutDeedlock) const {
+        inline const Locker<typename T::ValueType, T> lock_const(const SyncTimeoutType &timeout = SyncTimeoutDeedlock) const {
             return make_auto(true, timeout);
         }
 
-        //        inline Auto<typename T::ValueType, T> operator*() {
-        //
-        //            return make_auto(false);
-        //        }
-        //
-        //        inline const Auto<typename T::ValueType, T> operator*() const {
-        //
-        //            return make_auto(true);
-        //        }
+//        template < typename = std::enable_if<std::is_trivially_copyable_v < V >> >
+        inline T::ValueType & operator*() const {
+            auto guard_lock = lock_const();
+            return *guard_lock;
+        }
+
+//        template < typename = std::enable_if<std::is_trivially_copyable_v < V >> >
+        inline Weak<T> & operator=(T::ValueType && value) {
+            auto guard_lock = lock();
+            *guard_lock = value;
+            return *this;
+        }
+
+        inline Weak<T> & set(T::ValueType && value, const SyncTimeoutType &timeout = SyncTimeoutDeedlock) {
+            auto guard_lock = lock(timeout);
+            *guard_lock = value;
+            return *this;
+        }
 
         inline explicit operator bool() const noexcept {
             return this->lock();
@@ -677,6 +700,127 @@ namespace memsafe { // Begin define memory safety classes
     static_assert(std::is_standard_layout_v<Class<int>>);
 
 #pragma clang attribute pop
+
+    /**
+     * An example of a linked list template implemented using weak pointers 
+     * (where strong references between the same data types are not allowed).
+     */
+
+    template <typename T>
+    struct LinkedWeakNode {
+        typedef std::weak_ptr<LinkedWeakNode<T>> WeakType;
+        WeakType next;
+        T data;
+
+        LinkedWeakNode(const T & value) : data(value) {
+        }
+    };
+
+    template <typename T>
+    class LinkedWeakList {
+    public:
+        typedef LinkedWeakNode<T> NodeType;
+        typedef std::shared_ptr<NodeType> SharedType;
+
+        SharedType m_head;
+        std::set<SharedType> m_data;
+
+        LinkedWeakList() : m_head(nullptr) {
+        }
+
+
+        // Function to Insert a new node at the beginning of the list
+
+        void push_front(T && data) {
+            SharedType node = std::make_shared<NodeType>(data);
+            m_data.insert(node);
+            node->next = m_head;
+            m_head = node;
+        }
+
+        void push_back(T && data) {
+            SharedType node = std::make_shared<NodeType>(data);
+
+            m_data.insert(node);
+
+            // If the linked list is empty, update the head to the new node
+            if (!m_head) {
+                m_head = node;
+                return;
+            }
+
+            // Traverse to the last node
+            SharedType temp = m_head;
+            while (temp->next.lock()) {
+                temp = temp->next.lock();
+            }
+
+            // Update the last node's next to the new node
+            temp->next = node;
+        }
+
+
+        // Function to Delete the first node of the list
+
+        void pop_front() {
+            if (!m_head) {
+                std::cerr << "List is empty." << std::endl;
+                return;
+            }
+            SharedType temp = m_head;
+            m_head = m_head->next.lock();
+            m_data.erase(temp);
+        }
+
+        // Function to Delete the last node of the list
+
+        void pop_back() {
+            if (!m_head) {
+                std::cerr << "List is empty." << std::endl;
+                return;
+            }
+
+            SharedType temp = m_head->next.lock();
+            if (!temp) {
+                m_data.erase(m_head);
+                m_head.reset();
+                return;
+            }
+
+            // Traverse to the second-to-last node
+            while (temp->next.lock()->next.lock()) {
+                temp = temp->next.lock();
+            }
+
+            //  Delete the last node
+            m_data.erase(temp->next.lock());
+        }
+
+        size_t size() {
+            return m_data.size();
+        }
+
+        size_t empty() {
+            return m_data.empty();
+        }
+
+        std::string to_string() {
+            if (!m_head) {
+                return "nullptr";
+            }
+
+            std::string result;
+
+            SharedType temp = m_head;
+            while (temp) {
+                result += std::to_string(temp->data);
+                result += " -> ";
+                temp = temp->next.lock();
+            }
+            return result;
+        }
+    };
+
 
 #ifndef DOXYGEN_SHOULD_SKIP_THIS
 
@@ -915,9 +1059,10 @@ namespace memsafe { // Begin define memory safety classes
     MEMSAFE_WARNING_TYPE("std::auto_ptr");
     MEMSAFE_WARNING_TYPE("std::shared_ptr");
 
+    MEMSAFE_SHARED_TYPE("std::shared_ptr");
     MEMSAFE_SHARED_TYPE("memsafe::Shared");
 
-    MEMSAFE_AUTO_TYPE("memsafe::Auto");
+    MEMSAFE_AUTO_TYPE("memsafe::Locker");
     MEMSAFE_AUTO_TYPE("__gnu_cxx::__normal_iterator");
     MEMSAFE_AUTO_TYPE("std::reverse_iterator");
 

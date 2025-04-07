@@ -13,8 +13,8 @@ CND_BUILDDIR=build
 CND_DLIB_EXT=so
 NBTMPDIR=${CND_BUILDDIR}/${CND_CONF}/${CND_PLATFORM}/tmp-packaging
 TMPDIRNAME=tmp-packaging
-OUTPUT_PATH=${CND_DISTDIR}/${CND_CONF}/${CND_PLATFORM}/memsafe
-OUTPUT_BASENAME=memsafe
+OUTPUT_PATH=memsafe_unittest
+OUTPUT_BASENAME=memsafe_unittest
 PACKAGE_TOP_DIR=memsafe/
 
 # Functions

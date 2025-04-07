@@ -1,10 +1,12 @@
-# Memsafe - proof-of-concept for memory safety in C++
+## Memory Safety for C++
 
-Many people want to make C++ "safer" so that they don't have to rewrite a lot of code in the latest fancy programming languages.
-But making changes to the syntax of a language usually breaks backwards compatibility with older code written before that point.
+There are many projects that want to make C++ a "safer" programming language.
+But making changes to the language syntax usually breaks backward compatibility with older code written earlier.
 
-This project contains code for a library header file and compiler plugin for *safe C++*,
-which fixes the major problems of C++ with memory and reference data types without breaking backwards compatibility with older legacy code.
+This project contains code for a library header file and compiler plugin for *safe C++*, 
+which fixes C++'s core problems with memory and reference data types without breaking backwards compatibility with old legacy code.
+
+### Motivation
 
 > The global problem of the C and C++ languages ​​is that the pointer to the allocated memory block in the heap is an ordinary address
 > in RAM and has no connection with variables - pointers that are in local variables on the stack,
@@ -13,38 +15,12 @@ which fixes the major problems of C++ with memory and reference data types witho
 > The second, no less serious problem, which often leads to undefined behavior (Undefined Behavior)
 > or data races (Data Races) is access to the same memory area from different threads at the same time.
 
-The [memory safety for C++](https://github.com/rsashka/memsafe) project is based on the idea 
-of ​​using strong and weak pointers to an allocated block of memory on the heap 
-and managing the lifetime of copies of variables with strong pointers in automatic variables.
+There are many projects that want to make C++ a "safer" programming language.
+But making changes to the language's syntax usually breaks backward compatibility with older code written earlier.
 
-The concept of safe memory management is ported to C++ from the [NewLang](https://newlang.net/) language. 
-It is a bit similar to [ownership and borrowing in Rust](https://doc.rust-lang.org/book/ch04-00-understanding-ownership.html), 
-but is implemented using the standard C++ template classes *shared_ptr* and *weak_ptr*.
-
-The following features are implemented in the C++ [memsafe](https://github.com/rsashka/memsafe) library:
-- Automatic allocation and release of memory and resources when creating and destroying objects in the [RAII](https://en.cppreference.com/w/cpp/language/raii) style.
-- Checking for invalidation of reference types (iterators, std::span, std::string_view, etc.) when changing data in the original variable.
-- Prohibition on creating strong **cyclic/recursive** references (in the form of ordinary variables or class fields).
-- It is allowed to create copies of strong references only to automatic variables whose lifetime is controlled by the compiler.
-- Automatic protection against data races is implemented when accessing the same variable from different threads simultaneously
-(when defining a variable, it is necessary to specify a method for managing access from several threads, 
-after which the capture and release of the synchronization object will occur automatically).
-*By default, shared variables are created without multi-threaded access control and require 
-no additional overhead compared to the standard `shared_ptr` and `weak_ptr`* template classes.
-
->All the above checks are performed during source code compilation using a compiler plugin,
-which is designed only for AST analysis and does not make any changes to the source code.
-
-The main difference when working with reference variables, compared to *shared_ptr* and *weak_ptr*,
-is in the way references are dereferenced (obtaining the object address),
-which is not done directly using the "**\***" operator, but in two stages.
-
-First, the reference must be captured (saved) in a temporary (automatic) variable,
-the lifetime of which is automatically controlled by the compiler, 
-and then direct access to the data itself (memory address / object) is obtained through it.
-
-Such an automatic variable is a temporary owner of a strong reference and performs the functions of capturing
-an inter-thread synchronization object in the style of [std::lock_guard](https://en.cppreference.com/w/cpp/thread/lock_guard)
+This project contains a header only library and a compiler plugin for *safe C++*,
+which fixes the main problems of C++ when working with memory and reference data types
+without breaking backward compatibility with old legacy code (it uses C++20, but can be downgraded to C++17 or C++11).
 
 The method of marking objects in the source code and configuring the plugin's operation parameters
 is performed using C++ attributes, which is very similar to the security profiles
@@ -53,12 +29,70 @@ and [P3081](https://isocpp.org/files/papers/P3081R0.pdf) by Herb Sutter,
 but does not require the creation of a new standard (it is enough to use the existing C++20).
 
 
+### Concept
+
+The concept of safe memory management consists of implementing the following principles:
+- If the program is guaranteed to have no strong cyclic references
+(references of an object to itself or cross-references between several objects),
+then when implementing the [RAII](https://en.wikipedia.org/wiki/Resource_acquisition_is_initialization) principle
+*automatic memory release will be performed **always***.
+- The absence of cyclic references in the program code can only be guaranteed by prohibiting them at the level of *types* (class definitions).
+- The problem of data races when accessing memory from different threads is solved by using inter-thread synchronization objects.
+To prevent errors in logic, only one operator (function call) should be used to capture the synchronization object and dereference the reference.
+
+The concept of safe memory management is ported to C++ from the [NewLang](https://newlang.net/) language,
+but is implemented using the standard C++ template classes *shared_ptr* and *weak_ptr*.
+
+The main difference when working with reference variables, compared to *shared_ptr* and *weak_ptr*,
+is in the way references are dereferenced (obtaining the object address),
+which is not done directly using the "**\***" operator, but in two stages.
+
+
+The main difference between the new templates is the method of accessing the object, 
+which can be not only by dereferencing the reference "**\***", 
+but also by capturing (blocking) the reference and storing it in a *temporary variable*,
+the lifetime of which is limited and automatically controlled by the compiler,
+and through it direct access to the data (object) itself is carried out.
+
+Such an automatic variable is a *temporary* strong reference holder and is similar to
+[std::lock_guard](https://en.cppreference.com/w/cpp/thread/lock_guard) - a synchronization object holder 
+until the end of the current scope (lifetime), after which it is automatically deleted by the compiler.
+
+### Implementation
+
+The implementation of the concept of safe work with memory for C++ consists of two parts: a plugin for Clang and a header file of the library.
+
+Clang plugin performs static analysis of C++ code during its compilation. 
+It checks for invalidation of reference types (iterators, std::span, std::string_view, etc.) 
+when data in the original variable is changed and controls strong **cyclic** references 
+at the type level (class definitions) of any nesting **\***).
+
+The library file contains template classes that extend the standard *std::shared_ptr* and *std::weak_ptr* 
+and add automatic data race protection to them when accessing shared variables from different threads 
+(the access control method must be specified when defining the variable, after which the acquisition 
+and release of the synchronization object will occur automatically when the reference is renamed).
+*By default, shared variables are created without multi-thread access control 
+and have no additional overhead compared to the standard template classes `std::shared_ptr` and `std::weak_ptr`*.
+
+The library header file also contains options for controlling the analyzer plugin 
+(a list of classes that need to be monitored for invalid reference data types is defined).
+
+---
+
+**\***) - since C++ compiles files separately, and the class (data structure) 
+definition may be in a different translation unit due to forward declaration,
+two passes may be required for the circular reference analyzer to work correctly.
+*First run the plugin with the '--circleref-write -fsyntax-only' option to generate a list of classes with strong references, 
+then a second time with the '--circleref-read' option to perform the analysis. 
+Or disable the circular reference analyzer completely with the '--circleref-disable' option.*
+
+
 ## Examples
 
 Command line for compiling a file with clang and using a plugin
 
 ```bash
-clang++ -std=c++20 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe _example.cpp
+clang++ -std=c++20 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -Xclang -plugin-arg-memsafe -Xclang circleref-disable _example.cpp
 ```
 
 ### Output of the plugin with  pointer invalidation control:
@@ -86,86 +120,38 @@ _example.cpp:31:27: error: Using the dependent variable 'x' after changing the m
       |                           ^
 ```
 
-### Example of plugin output when analyzing shared variables:
+
+### Example of analyzing classes with recursive references:
 
 ```cpp
-    void shared_example() {
-        Shared<int> var = 1;
-        Shared<int> copy;
-        copy = var; // Error
-        std::swap(var, copy);
-        {
-            Shared<int> inner = var;
-            std::swap(inner, copy); // Error
-            copy = inner;
-        }
-    }
-```
 
-**A fragment of the compiler plugin output with error messages for incorrect use of shared variables:**
+    class SharedCross2;
 
-```bash
-_example.cpp:148:9: error: Error copying shared variable due to lifetime extension
-  148 |         copy = var; // Error
-      |         ^
-_example.cpp:152:13: error: Error swap the shared variables with different lifetimes
-  152 |             std::swap(inner, copy); // Error
-      |             ^
-_example.cpp:155:13: error: Error copying shared variable due to lifetime extension
-  155 |             copy = inner; // Error
-      |             ^
-```
+    class SharedCross {
+        SharedCross2 *cross2;
+    };
 
-
-### Example of class analysis:
-
-```cpp
-    class RecursiveRef {
-    public:
-        RecursiveRef * ref_pointer; // Error
-        std::shared_ptr<RecursiveRef> ref_shared; // Error
-        std::weak_ptr<RecursiveRef> ref_weak;
-
-        Auto<int, int&> ref_int; // Error
-        Shared<RecursiveRef> recursive; // Error
-        Weak<Shared<RecursiveRef>> ref_weak2;
-        Class<RecursiveRef> reference;
-
-        MEMSAFE_UNSAFE RecursiveRef * unsafe_pointer; // Unsafe
-        MEMSAFE_UNSAFE std::shared_ptr<RecursiveRef> unsafe_shared; // Unsafe
-        MEMSAFE_UNSAFE Auto<int, int&> unsafe_ref_int; // Unsafe
-        MEMSAFE_UNSAFE Shared<RecursiveRef> unsafe_recursive; // Unsafe
+    class SharedCross2 {
+        SharedCross *cross;
     };
 ```
 
-**A fragment of the compiler plugin output with error messages when analyzing a class:**
+A fragment of the compiler plugin output with error messages when analyzing a class:
 
 ```bash
-
-_example.cpp:179:24: error: Field type raw pointer
-  179 |         RecursiveRef * ref_pointer; // Error
-      |                        ^
-_example.cpp:180:39: error: Error type found 'std::shared_ptr'
-  180 |         std::shared_ptr<RecursiveRef> ref_shared; // Error
-      |                                       ^
-_example.cpp:183:25: error: Create auto variabe as field ref_int:auto-type
-  183 |         Auto<int, int&> ref_int; // Error
-      |                         ^
-_example.cpp:184:30: error: Potentially recursive pointer to ns::RecursiveRef
-  184 |         Shared<RecursiveRef> recursive; // Error
-      |                              ^
-_example.cpp:188:39: warning: UNSAFE field type raw pointer
-  188 |         MEMSAFE_UNSAFE RecursiveRef * unsafe_pointer; // Unsafe
-      |                                       ^
-_example.cpp:189:54: warning: UNSAFE Error type found 'std::shared_ptr'
-  189 |         MEMSAFE_UNSAFE std::shared_ptr<RecursiveRef> unsafe_shared; // Unsafe
-      |                                                      ^
-_example.cpp:190:40: warning: UNSAFE create auto variabe as field unsafe_ref_int:auto-type
-  190 |         MEMSAFE_UNSAFE Auto<int, int&> unsafe_ref_int; // Unsafe
-      |                                        ^
-_example.cpp:191:45: warning: UNSAFE potentially recursive pointer to ns::RecursiveRef
-  191 |         MEMSAFE_UNSAFE Shared<RecursiveRef> unsafe_recursive; // Unsafe
-      |                                             ^
+_cycles.cpp:53:23: error: The class 'cycles::SharedCross' has a circular reference through class 'cycles::SharedCross2'
+   53 |         SharedCross2 *cross2;
+      |                       ^
+_cycles.cpp:57:22: error: The class 'cycles::SharedCross2' has a circular reference through class 'cycles::SharedCross'
+   57 |         SharedCross *cross;
+      |                      ^
+_cycles.cpp:53:23: error: Field type raw pointer
+   53 |         SharedCross2 *cross2;
+      |                       ^
+_cycles.cpp:53:23: error: The class 'cycles::SharedCross' has a circular reference through class 'cycles::SharedCross2'
+_cycles.cpp:57:22: error: Field type raw pointer
+   57 |         SharedCross *cross;
+      |                      ^
 ```
 
 
@@ -180,105 +166,9 @@ since it only parses the AST, but does not make any corrections to it.
 <summary> Show output: </summary>
 
 ```bash
-clang++-20 -std=c++26 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe _example.cpp
+clang++-20 -std=c++26 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -Xclang -plugin-arg-memsafe -Xclang circleref-disable _example.cpp
 
-_example.cpp:20:18: error: Raw pointer type
-   20 |             auto pointer = &vect; // Error
-      |                  ^
-_example.cpp:20:28: error: Operator for address arithmetic
-   20 |             auto pointer = &vect; // Error
-      |                            ^
-_example.cpp:25:18: error: Raw pointer type
-   25 |             auto view_iter = view.begin(); // Error
-      |                  ^
-_example.cpp:24:13: warning: using main variable 'str'
-   24 |             str.clear();
-      |             ^
-_example.cpp:25:30: error: Using the dependent variable 'view' after changing the main variable 'str'!
-   25 |             auto view_iter = view.begin(); // Error
-      |                              ^
-_example.cpp:29:17: warning: using main variable 'vect'
-   29 |                 vect = {};
-      |                 ^
-_example.cpp:30:17: warning: using main variable 'vect'
-   30 |                 vect.shrink_to_fit();
-      |                 ^
-_example.cpp:31:27: error: Using the dependent variable 'beg' after changing the main variable 'vect'!
-   31 |                 std::sort(beg, vect.end()); // Error
-      |                           ^
-_example.cpp:73:17: error: Create auto variabe as static static_fail1:auto-type
-   73 |     static auto static_fail1(var_static.take()); // Error
-      |                 ^
-_example.cpp:74:17: error: Create auto variabe as static static_fail2:auto-type
-   74 |     static auto static_fail2 = var_static.take(); // Error
-      |                 ^
-_example.cpp:94:9: error: Error copying shared variable due to lifetime extension
-   94 |         var_shared1 = var_shared1; // Error
-      |         ^
-_example.cpp:100:13: error: Error copying shared variable due to lifetime extension
-  100 |             var_shared1 = var_shared1; // Error
-      |             ^
-_example.cpp:101:13: error: Error copying shared variable due to lifetime extension
-  101 |             var_shared2 = var_shared1; // Error
-      |             ^
-_example.cpp:108:17: error: Error copying shared variable due to lifetime extension
-  108 |                 var_shared1 = var_shared1; // Error
-      |                 ^
-_example.cpp:109:17: error: Error copying shared variable due to lifetime extension
-  109 |                 var_shared2 = var_shared1; // Error
-      |                 ^
-_example.cpp:115:17: error: Error copying shared variable due to lifetime extension
-  115 |                 var_shared4 = var_shared4; // Error
-      |                 ^
-_example.cpp:120:17: error: Return shared variable
-  120 |                 return var_shared4; // Error
-      |                 ^
-_example.cpp:125:13: error: Error swap the shared variables with different lifetimes
-  125 |             std::swap(var_shared1, var_shared3);
-      |             ^
-_example.cpp:129:13: error: Return shared variable
-  129 |             return arg; // Error
-      |             ^
-_example.cpp:146:30: error: Error type found 'std::shared_ptr'
-  146 |         std::shared_ptr<int> old_shared; // Error
-      |                              ^
-_example.cpp:149:9: error: Error copying shared variable due to lifetime extension
-  149 |         copy = var; // Error
-      |         ^
-_example.cpp:153:13: error: Error swap the shared variables with different lifetimes
-  153 |             std::swap(inner, copy); // Error
-      |             ^
-_example.cpp:155:13: error: Error copying shared variable due to lifetime extension
-  155 |             copy = inner; // Error
-      |             ^
-_example.cpp:163:9: error: Return shared variable
-  163 |         return arg; // Error
-      |         ^
-_example.cpp:180:24: error: Field type raw pointer
-  180 |         RecursiveRef * ref_pointer; // Error
-      |                        ^
-_example.cpp:181:39: error: Error type found 'std::shared_ptr'
-  181 |         std::shared_ptr<RecursiveRef> ref_shared; // Error
-      |                                       ^
-_example.cpp:184:25: error: Create auto variabe as field ref_int:auto-type
-  184 |         Auto<int, int&> ref_int; // Error
-      |                         ^
-_example.cpp:185:30: error: Potentially recursive pointer to ns::RecursiveRef
-  185 |         Shared<RecursiveRef> recursive; // Error
-      |                              ^
-_example.cpp:189:39: warning: UNSAFE field type raw pointer
-  189 |         MEMSAFE_UNSAFE RecursiveRef * unsafe_pointer; // Unsafe
-      |                                       ^
-_example.cpp:190:54: warning: UNSAFE Error type found 'std::shared_ptr'
-  190 |         MEMSAFE_UNSAFE std::shared_ptr<RecursiveRef> unsafe_shared; // Unsafe
-      |                                                      ^
-_example.cpp:191:40: warning: UNSAFE create auto variabe as field unsafe_ref_int:auto-type
-  191 |         MEMSAFE_UNSAFE Auto<int, int&> unsafe_ref_int; // Unsafe
-      |                                        ^
-_example.cpp:192:45: warning: UNSAFE potentially recursive pointer to ns::RecursiveRef
-  192 |         MEMSAFE_UNSAFE Shared<RecursiveRef> unsafe_recursive; // Unsafe
-      |                                             ^
-7 warnings and 25 errors generated.
+...
 
 ```
 </details>
@@ -291,66 +181,87 @@ If you have any suggestions for the development and improvement of the project, 
 ---
 
 
-## Библиотека для проверки концепции безопасной работы с памятью в С++
+## Безопасная работа с памятью для С++
 
-Есть много желающих сделать С++ более "безопасным", чтобы не пришлось переписывать большое количество кода на новых модных языках программирования.
-Но внесение изменений в синтаксис языка обычно нарушат обратную совместимость со старым кодом, который был написан до этого момента. 
+### Мотивация
 
-Данный проект содержит код заголовочного файла библиотеки и плагина компилятора для *безопасного С++*, 
-который устраняет основные проблемы С++ при работе с памятью и ссылочными типами данных без нарушения обратной совместимости со старым легаси кодом.
-
-> Глобальная проблема языков C и C++ в том, что указатель на выделенный блок памяти в куче является обычным адресом 
-> в оперативной памяти и у него отсутствует связь и переменными - указателями, которые находятся в локальных переменных на стеке,
+> Глобальная проблема языка C++ в том, что указатель на выделенный блок памяти в куче является обычным адресом 
+> оперативной памяти и у него отсутствует связь с локальными переменными - указателями, которые находятся на стеке,
 > и временем жизни которых управляет компилятор. 
 > 
 > Вторая, не менее серьезная проблема, которая часто приводить к неопределенному поведению (Undefined Behaviour) 
 > или гонке данных (Data Races) - это доступ к одной и той же области памяти из разных потоков одновременно.
 
-В основе проекта [безопасной работы с памятью для С++](https://github.com/rsashka/memsafe) лежит идея использования сильных 
-и слабых указателей на выделенный блок памяти в куче и контроль времени жизни копий переменных с сильными указателями в автоматических переменных. 
+Есть много проектов, целью которых является превратить С++ более "безопасный" язык программирования.
+Но внесение изменений в синтаксис языка обычно нарушает обратную совместимость со старым кодом, который был написан до этого.
 
-Сама концепция безопасной работы с памятью портирована на С++ из языка [NewLang](https://newlang.net/).
-Она немного похожа на [владение и заимствование в Rust](https://doc.rust-lang.org/book/ch04-00-understanding-ownership.html), 
-но реализована на базе стандартных шаблонных классов С++ *shared_ptr* и *weak_ptr*.
-
-В C++ библиотеке [memsafe](https://github.com/rsashka/memsafe) реализованы следующие возможности:
-- Автоматическое выделение и освобождение памяти и ресурсов при создании и уничтожении объектов в стиле [RAII](https://en.cppreference.com/w/cpp/language/raii).
-- Проверка инвалидации ссылочных типов (итераторов, std::span, std::string_view и т.д.) при изменении данных в исходной переменной.
-- Запрет на создание сильных **циклических** ссылок (в виде обычных переменных или полей классов).
-- Разрешается создание копий сильных ссылок только в автоматические переменные, время жизни которых контролирует компиятор.
-- Реализована автоматическая защита от гонок данных при доступе к одной и той же переменной из разных потоков одновременно 
-(способ контроля доступа из нескольких потоков требуется указывать при определении переменной, 
-после чего захват и освобождение объекта синхронизации будут происходить автоматически).
-*По умолчанию общие переменные создаются без контроля многопоточного доступа 
-и не имеют дополнительных накладных раскодов по стравнению с стандартными шаблонными классами `shared_ptr` и `weak_ptr`*.
-
->Все указанные проверки выполняются во время компиляции исходного кода с помощью плагина компилятора,
-который предназначен только для анализа AST и не вносит в исходный код никаких изменений.
-
-Основное отличие при работе со ссылочными переменными, по сравнению с обычными *shared_ptr* и *weak_ptr*,
-заключается в способе разименования ссылок (получения адреса объекта), 
-который происходит не напрямую с помощью оператора "**\***", а в два этапа. 
-
-Сперва ссылку следует захватить (сохранить) во временную переменную, 
-время жизни которой контролируется компилятором автоматически,
-и уже через неё получается доступ непосредственный к самим данным (объекту). 
-
-Такая автоматическая переменная является временным владельцем сильной ссылки и выполняет функции захвата 
-объекта межпотоковой синхронизации в стиле [std::lock_guard](https://en.cppreference.com/w/cpp/thread/lock_guard)
+Данный проект содержит заголовочный файл библиотеки и плагин компилятора для *безопасного С++*, 
+который устраняет основные проблемы С++ при работе с памятью и ссылочными типами данных 
+без нарушения обратной совместимости со старым легаси кодом (используется С++20, но можно понизить до С++17 или С++11).
 
 Способ маркировки объектов в исходноом коде и настройка параметров работы плагина
 выполняется с помощью  C++ атрибутов, что очень похоже на профили безопасности 
 [p3038](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p3038r0.pdf) от Bjarne Stroustrup 
 и [P3081](https://isocpp.org/files/papers/P3081R0.pdf) от Herb Sutter, 
-но не требует принятия нового стандарта (достаточно использовать уже существующий С++20).
+но не требует принятия нового стандарта С++.
 
+### Концепция
+
+Концепция безопасной работы с памятью заключается в реализации следующих принципов:   
+- Если в программе гарантированно отсутствуют сильные циклические ссылки 
+(ссылка объекта на самого себя или перекрестные ссылки между несколькими объектами), 
+тогда при реализации принципа [RAII](https://en.wikipedia.org/wiki/Resource_acquisition_is_initialization), 
+*автоматическое освобождение памяти будет выполнятся **всегда без исключений***.
+- Гарантировать отсутствие циклических ссылок можно только путем их запрета на уровне *типов* (определений классов).
+- Проблема гонок данных при обращении к памяти из разных потоков решается за счет использования объектов межпотоковой синхронизации.
+Чтобы исключить ошибки в логике для захвата объекта синхронизации и разименования ссылки используются единый оператор (вызов функции).
+
+Изначальная идея безопасной работы с памятью  была взята из языка [NewLang](https://newlang.net/), 
+но реализована на базе стандартных шаблонных классов С++ *shared_ptr* и *weak_ptr*.
+
+Основное отличие новых шаблонов заключается в способе обращения к объекту, 
+который может выполняться не только с помощью разименования "**\***", 
+но и через захват (блокировку) ссылки с сохранением её во *временную переменную*, 
+время жизни которой ограничено и автоматически контролируется компилятором,
+и уже через неё получается доступ непосредственный к самим данным (объекту). 
+
+Такая автоматическая переменная является *временным* владельцем сильной ссылки и выполняет функции удержания
+объекта межпотоковой синхронизации в стиле [std::lock_guard](https://en.cppreference.com/w/cpp/thread/lock_guard),
+время жизни которого ограничено текущей областью видимости и управляется компилятором автоматически.
+
+### Реализация
+
+Реализация концепции безопасной работы с памятью для С++ состоит из двух частей: плагина для Clang и заголовочного файла библиотеки.
+
+С помощью плагина для Clang выполняется статический анализ С++ кода во время его компиляции.
+В плагине реализованы проверка инвалидации ссылочных типов (итераторов, std::span, std::string_view и т.д.) при изменении данных в исходной переменной
+и контроль сильных **циклических** ссылок на уровне типов (определений классов) любой вложенности **\***).
+
+В файле библиотеки находятся шаблонные классы, расширяющие стандартные *std::shared_ptr* и *std::weak_ptr* 
+с автоматической защитой от гонок данных при доступе к общим переменным из разных потоков
+(способ контроля доступа требуется указать при определении переменной, 
+после чего захват и освобождение объекта синхронизации будут происходить автоматически при разименовании ссылки).
+*По умолчанию общие переменные создаются без контроля многопоточного доступа 
+и не имеют дополнительных накладных расходов по стравнению с стандартными шаблонными классами `std::shared_ptr` и `std::weak_ptr`*.
+
+Так же в заголовочным файле библиотеки находятся опции для управления плагином анализатора 
+(опредляется список классов, которые необходимо отслеживать для инвалидации ссылочных типов данных).
+
+---
+
+**\***) - *поскольку C++ компилирует файлы по отдельности, а определение класса (структуры данных)
+может находиться в другой единице трансляции из-за предварительного объявления,
+для корректной работы анализатора циклических ссылок может потребоваться два прохода.* 
+*Сначала запустить плагин с ключом '--circleref-write -fsyntax-only', чтобы сгенерировать список классов
+с сильными ссылками, затем второй раз с ключом '--circleref-read', чтобы выполнить анализ.
+Или полностью отключить анализатор циклических ссылок с помощью опции '--circleref-disable'.*
 
 ## Примеры
 
 Командная строка компиляции файла с помощью clang с загрузкой плагина
 
 ```bash
-clang++ -std=c++20 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe _example.cpp
+clang++ -std=c++20 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -Xclang -plugin-arg-memsafe -Xclang circleref-disable _example.cpp
 ```
 
 ### Вывод плагина с контролем инвалидации ссылок:
@@ -378,84 +289,36 @@ _example.cpp:31:27: error: Using the dependent variable 'x' after changing the m
       |                           ^
 ```
 
-### Пример вывода плагина при анализе ссылочных переменных:
+### Пример анализа классов с рекурсивными ссылками:
 
 ```cpp
-    void shared_example() {
-        Shared<int> var = 1;
-        Shared<int> copy;
-        copy = var; // Error
-        std::swap(var, copy);
-        {
-            Shared<int> inner = var;
-            std::swap(inner, copy); // Error
-            copy = inner;
-        }
-    }
-```
 
-Фрагмент вывода плагина компилятора с сообщениями об ошибках при неправильном использовании ссылочных переменных:
-```bash
-_example.cpp:148:9: error: Error copying shared variable due to lifetime extension
-  148 |         copy = var; // Error
-      |         ^
-_example.cpp:152:13: error: Error swap the shared variables with different lifetimes
-  152 |             std::swap(inner, copy); // Error
-      |             ^
-_example.cpp:155:13: error: Error copying shared variable due to lifetime extension
-  155 |             copy = inner; // Error
-      |             ^
-```
+    class SharedCross2;
 
+    class SharedCross {
+        SharedCross2 *cross2;
+    };
 
-### Пример анализа класса:
-
-```cpp
-    class RecursiveRef {
-    public:
-        RecursiveRef * ref_pointer; // Error
-        std::shared_ptr<RecursiveRef> ref_shared; // Error
-        std::weak_ptr<RecursiveRef> ref_weak;
-
-        Auto<int, int&> ref_int; // Error
-        Shared<RecursiveRef> recursive; // Error
-        Weak<Shared<RecursiveRef>> ref_weak2;
-        Class<RecursiveRef> reference;
-
-        MEMSAFE_UNSAFE RecursiveRef * unsafe_pointer; // Unsafe
-        MEMSAFE_UNSAFE std::shared_ptr<RecursiveRef> unsafe_shared; // Unsafe
-        MEMSAFE_UNSAFE Auto<int, int&> unsafe_ref_int; // Unsafe
-        MEMSAFE_UNSAFE Shared<RecursiveRef> unsafe_recursive; // Unsafe
+    class SharedCross2 {
+        SharedCross *cross;
     };
 ```
 
 Фрагмент вывода плагина компилятора с сообщениями об ошибках при анализе класса:
 ```bash
-
-_example.cpp:179:24: error: Field type raw pointer
-  179 |         RecursiveRef * ref_pointer; // Error
-      |                        ^
-_example.cpp:180:39: error: Error type found 'std::shared_ptr'
-  180 |         std::shared_ptr<RecursiveRef> ref_shared; // Error
-      |                                       ^
-_example.cpp:183:25: error: Create auto variabe as field ref_int:auto-type
-  183 |         Auto<int, int&> ref_int; // Error
-      |                         ^
-_example.cpp:184:30: error: Potentially recursive pointer to ns::RecursiveRef
-  184 |         Shared<RecursiveRef> recursive; // Error
-      |                              ^
-_example.cpp:188:39: warning: UNSAFE field type raw pointer
-  188 |         MEMSAFE_UNSAFE RecursiveRef * unsafe_pointer; // Unsafe
-      |                                       ^
-_example.cpp:189:54: warning: UNSAFE Error type found 'std::shared_ptr'
-  189 |         MEMSAFE_UNSAFE std::shared_ptr<RecursiveRef> unsafe_shared; // Unsafe
-      |                                                      ^
-_example.cpp:190:40: warning: UNSAFE create auto variabe as field unsafe_ref_int:auto-type
-  190 |         MEMSAFE_UNSAFE Auto<int, int&> unsafe_ref_int; // Unsafe
-      |                                        ^
-_example.cpp:191:45: warning: UNSAFE potentially recursive pointer to ns::RecursiveRef
-  191 |         MEMSAFE_UNSAFE Shared<RecursiveRef> unsafe_recursive; // Unsafe
-      |                                             ^
+_cycles.cpp:53:23: error: The class 'cycles::SharedCross' has a circular reference through class 'cycles::SharedCross2'
+   53 |         SharedCross2 *cross2;
+      |                       ^
+_cycles.cpp:57:22: error: The class 'cycles::SharedCross2' has a circular reference through class 'cycles::SharedCross'
+   57 |         SharedCross *cross;
+      |                      ^
+_cycles.cpp:53:23: error: Field type raw pointer
+   53 |         SharedCross2 *cross2;
+      |                       ^
+_cycles.cpp:53:23: error: The class 'cycles::SharedCross' has a circular reference through class 'cycles::SharedCross2'
+_cycles.cpp:57:22: error: Field type raw pointer
+   57 |         SharedCross *cross;
+      |                      ^
 ```
 
 
@@ -469,105 +332,11 @@ _example.cpp:191:45: warning: UNSAFE potentially recursive pointer to ns::Recurs
 <summary>Показать вывод</summary>
 
 ```bash
-clang++-20 -std=c++20 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe _example.cpp
+clang++-20 -std=c++20 -ferror-limit=500 -Xclang -load -Xclang ./memsafe_clang.so -Xclang -add-plugin -Xclang memsafe -Xclang -plugin-arg-memsafe -Xclang circleref-disable _example.cpp
 
-_example.cpp:20:18: error: Raw pointer type
-   20 |             auto pointer = &vect; // Error
-      |                  ^
-_example.cpp:20:28: error: Operator for address arithmetic
-   20 |             auto pointer = &vect; // Error
-      |                            ^
-_example.cpp:25:18: error: Raw pointer type
-   25 |             auto view_iter = view.begin(); // Error
-      |                  ^
-_example.cpp:24:13: warning: using main variable 'str'
-   24 |             str.clear();
-      |             ^
-_example.cpp:25:30: error: Using the dependent variable 'view' after changing the main variable 'str'!
-   25 |             auto view_iter = view.begin(); // Error
-      |                              ^
-_example.cpp:29:17: warning: using main variable 'vect'
-   29 |                 vect = {};
-      |                 ^
-_example.cpp:30:17: warning: using main variable 'vect'
-   30 |                 vect.shrink_to_fit();
-      |                 ^
-_example.cpp:31:27: error: Using the dependent variable 'beg' after changing the main variable 'vect'!
-   31 |                 std::sort(beg, vect.end()); // Error
-      |                           ^
-_example.cpp:73:17: error: Create auto variabe as static static_fail1:auto-type
-   73 |     static auto static_fail1(var_static.take()); // Error
-      |                 ^
-_example.cpp:74:17: error: Create auto variabe as static static_fail2:auto-type
-   74 |     static auto static_fail2 = var_static.take(); // Error
-      |                 ^
-_example.cpp:94:9: error: Error copying shared variable due to lifetime extension
-   94 |         var_shared1 = var_shared1; // Error
-      |         ^
-_example.cpp:100:13: error: Error copying shared variable due to lifetime extension
-  100 |             var_shared1 = var_shared1; // Error
-      |             ^
-_example.cpp:101:13: error: Error copying shared variable due to lifetime extension
-  101 |             var_shared2 = var_shared1; // Error
-      |             ^
-_example.cpp:108:17: error: Error copying shared variable due to lifetime extension
-  108 |                 var_shared1 = var_shared1; // Error
-      |                 ^
-_example.cpp:109:17: error: Error copying shared variable due to lifetime extension
-  109 |                 var_shared2 = var_shared1; // Error
-      |                 ^
-_example.cpp:115:17: error: Error copying shared variable due to lifetime extension
-  115 |                 var_shared4 = var_shared4; // Error
-      |                 ^
-_example.cpp:120:17: error: Return shared variable
-  120 |                 return var_shared4; // Error
-      |                 ^
-_example.cpp:125:13: error: Error swap the shared variables with different lifetimes
-  125 |             std::swap(var_shared1, var_shared3);
-      |             ^
-_example.cpp:129:13: error: Return shared variable
-  129 |             return arg; // Error
-      |             ^
-_example.cpp:146:30: error: Error type found 'std::shared_ptr'
-  146 |         std::shared_ptr<int> old_shared; // Error
-      |                              ^
-_example.cpp:149:9: error: Error copying shared variable due to lifetime extension
-  149 |         copy = var; // Error
-      |         ^
-_example.cpp:153:13: error: Error swap the shared variables with different lifetimes
-  153 |             std::swap(inner, copy); // Error
-      |             ^
-_example.cpp:155:13: error: Error copying shared variable due to lifetime extension
-  155 |             copy = inner; // Error
-      |             ^
-_example.cpp:163:9: error: Return shared variable
-  163 |         return arg; // Error
-      |         ^
-_example.cpp:180:24: error: Field type raw pointer
-  180 |         RecursiveRef * ref_pointer; // Error
-      |                        ^
-_example.cpp:181:39: error: Error type found 'std::shared_ptr'
-  181 |         std::shared_ptr<RecursiveRef> ref_shared; // Error
-      |                                       ^
-_example.cpp:184:25: error: Create auto variabe as field ref_int:auto-type
-  184 |         Auto<int, int&> ref_int; // Error
-      |                         ^
-_example.cpp:185:30: error: Potentially recursive pointer to ns::RecursiveRef
-  185 |         Shared<RecursiveRef> recursive; // Error
-      |                              ^
-_example.cpp:189:39: warning: UNSAFE field type raw pointer
-  189 |         MEMSAFE_UNSAFE RecursiveRef * unsafe_pointer; // Unsafe
-      |                                       ^
-_example.cpp:190:54: warning: UNSAFE Error type found 'std::shared_ptr'
-  190 |         MEMSAFE_UNSAFE std::shared_ptr<RecursiveRef> unsafe_shared; // Unsafe
-      |                                                      ^
-_example.cpp:191:40: warning: UNSAFE create auto variabe as field unsafe_ref_int:auto-type
-  191 |         MEMSAFE_UNSAFE Auto<int, int&> unsafe_ref_int; // Unsafe
-      |                                        ^
-_example.cpp:192:45: warning: UNSAFE potentially recursive pointer to ns::RecursiveRef
-  192 |         MEMSAFE_UNSAFE Shared<RecursiveRef> unsafe_recursive; // Unsafe
-      |                                             ^
-7 warnings and 25 errors generated.
+
+...
+
 
 ```
 </details>
