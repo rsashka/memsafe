@@ -109,14 +109,14 @@ namespace {
         }
 
         void Dump(raw_ostream & out) {
-            
+
             // For simple copy-paste into unit tests
-            
-            for (auto &elem : m_logs) {
-                out << "    \"" << elem.second.substr(0, elem.second.find(" ", 7)) << "\",\n";
-            }
-            out << "\n";
-            
+
+            //            for (auto &elem : m_logs) {
+            //                out << "    \"" << elem.second.substr(0, elem.second.find(" ", 7)) << "\",\n";
+            //            }
+            //            out << "\n";
+
 
             out << MEMSAFE_KEYWORD_START_LOG;
             for (auto &elem : m_logs) {
@@ -1186,17 +1186,17 @@ namespace {
                     auto found = m_classes.find(iter->first);
                     if (found == m_classes.end()) {
 
-                        std::string message = std::format(""
-                                "Class definition '{}' not found.\n"
+                        std::string message = std::format("Class definition '{}' not found in current translation unit.", iter->first);
+
+                        LogError(iter->second.second, message);
+
+                        getDiag().Report(iter->second.second,
+                                getDiag().getCustomDiagID(clang::DiagnosticsEngine::Error, ""
+                                "%0\n"
                                 "The circular reference analyzer requires two passes.\n"
                                 "First run the plugin with key '--circleref-write -fsyntax-only' to generate the class list,\n"
                                 "then run a second time with the '--circleref-read' key to re-analyze,\n"
-                                "or disable the circular reference analyzer with the 'circleref-disable' option.\n", iter->first);
-
-                        LogOnly(iter->second.second, message);
-
-                        getDiag().Report(iter->second.second,
-                                getDiag().getCustomDiagID(clang::DiagnosticsEngine::Error, "%0"))
+                                "or disable the circular reference analyzer with the 'circleref-disable' option.\n"))
                                 .AddString(message);
 
                         throw std::runtime_error(message);
@@ -2325,6 +2325,10 @@ namespace {
             }
 
             if (logger) {
+
+                llvm::outs().flush();
+                llvm::errs().flush();
+
                 logger->Dump(llvm::outs());
                 llvm::outs() << "\n";
                 plugin->dump(llvm::outs());
