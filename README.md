@@ -37,22 +37,19 @@ The concept of safe memory management consists of implementing the following pri
 then when implementing the [RAII](https://en.wikipedia.org/wiki/Resource_acquisition_is_initialization) principle
 *automatic memory release will be performed **always***.
 - The absence of cyclic references in the program code can only be guaranteed by prohibiting them at the level of *types* (class definitions).
-- The problem of data races when accessing memory from different threads is solved by using inter-thread synchronization objects.
-To prevent errors in logic, only one operator (function call) should be used to capture the synchronization object and dereference the reference.
+- The problem of data races when accessing memory from different threads is solved by using inter-thread synchronization objects,
+and to prevent errors in logic, only one operator (function call) should be used to capture
+the synchronization object and dereference the reference at the same time in one place.
 
 The concept of safe memory management is ported to C++ from the [NewLang](https://newlang.net/) language,
 but is implemented using the standard C++ template classes *shared_ptr* and *weak_ptr*.
 
-The main difference when working with reference variables, compared to *shared_ptr* and *weak_ptr*,
-is in the way references are dereferenced (obtaining the object address),
-which is not done directly using the "**\***" operator, but in two stages.
-
-
-The main difference between the new templates is the method of accessing the object, 
-which can be not only by dereferencing the reference "**\***", 
-but also by capturing (blocking) the reference and storing it in a *temporary variable*,
-the lifetime of which is limited and automatically controlled by the compiler,
-and through it direct access to the data (object) itself is carried out.
+The main difference when working with reference variables, compared to shared_ptr and weak_ptr, 
+is the method of dereferencing references (getting the address of an object), 
+and the method of accessing the object, which can be done not only by dereferencing the reference "*", 
+but also by capturing (locking) the reference and storing it in a temporary variable, 
+the lifetime of which is limited and automatically controlled by the compiler, 
+and through it direct access to the data itself (the object) is carried out.
 
 Such an automatic variable is a *temporary* strong reference holder and is similar to
 [std::lock_guard](https://en.cppreference.com/w/cpp/thread/lock_guard) - a synchronization object holder 
