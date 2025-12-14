@@ -1,3 +1,10 @@
+---
+
+# Project moved to https://github.com/afteri-ru/trusted-cpp
+
+---
+
+
 ## Memory Safety for C++
 
 There are many projects that want to make C++ a "safer" programming language.
